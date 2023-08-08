@@ -95,7 +95,6 @@ class GenericCache : public AbstractCache {
  public:
   GenericCache(ConfigReader &, FTL::FTL *, DRAM::AbstractDRAM *);
   ~GenericCache();
-  bool check_cache_full(Request &req, uint64_t &tick);
   bool read(Request &, uint64_t &) override;
   bool write(Request &, uint64_t &) override;
  

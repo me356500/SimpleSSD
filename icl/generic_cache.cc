@@ -543,16 +543,6 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
 
   return ret;
 }
-bool GenericCache::check_cache_full(Request &req, uint64_t &tick) {
-  uint32_t setIdx = calcSetIndex(req.range.slpn);
-  uint32_t wayIdx = getEmptyWay(setIdx, tick);
-  bool ret = 1;
-      
-  if (wayIdx != waySize) {
-    ret = 0;  
-  }
-  return ret;
-}
 // True when cold-miss/hit
 bool GenericCache::write(Request &req, uint64_t &tick) {
   bool ret = false;
