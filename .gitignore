@@ -32,3 +32,6 @@ temp_build/
 # Library output
 libsimplessd.a
 libmcpat.a
+
+# Output
+output/
