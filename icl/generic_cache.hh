@@ -100,6 +100,7 @@ class GenericCache : public AbstractCache {
   bool write(Request &, uint64_t &) override;
  
   void flush(LPNRange &, uint64_t &) override;
+  void flush_cache(uint64_t &tick);
   void trim(LPNRange &, uint64_t &) override;
   void format(LPNRange &, uint64_t &) override;
 

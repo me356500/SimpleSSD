@@ -581,7 +581,8 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
     wayIdx = getValidWay(req.range.slpn, tick);
 
     // Can we update old data?
-    if (wayIdx != waySize) {
+    // Cannot modify cache
+    if (0) { 
       uint64_t arrived = tick;
 
       // Wait cache to be valid
@@ -649,10 +650,13 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
         ret = true;
       }
       // We have to flush
+      // flush every set
       else {
-        uint32_t row, col;  // Variable for I/O position (IOFlag)
+        //uint32_t row, col;  // Variable for I/O position (IOFlag)
         uint32_t setToFlush = calcSetIndex(req.range.slpn);
 
+        flush_cache(tick);
+        /*
         for (setIdx = 0; setIdx < setSize; setIdx++) {
           for (wayIdx = 0; wayIdx < waySize; wayIdx++) {
             if (cacheData[setIdx][wayIdx].valid) {
@@ -708,7 +712,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
         tick += getCacheLatency() * setSize * waySize * 8;
 
         evictCache(tick, true);
-
+        */
         // Update cacheline of current request
         setIdx = setToFlush;
         wayIdx = getEmptyWay(setIdx, tick);
@@ -761,6 +765,33 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
   return ret;
 }
 
+void GenericCache::flush_cache(uint64_t &tick) {
+  if (useReadCaching || useWriteCaching) {
+    uint64_t ftlTick = tick;
+    uint64_t finishedAt = tick;
+    FTL::Request reqInternal(lineCountInSuperPage);
+    debugprint(LOG_ICL_GENERIC_CACHE, "----- | Begin flush_cache");
+    for (uint32_t setIdx = 0; setIdx < setSize; setIdx++) {
+      for (uint32_t wayIdx = 0; wayIdx < waySize; wayIdx++) {
+        Line &line = cacheData[setIdx][wayIdx];
+        tick += getCacheLatency() * 8;
+        if (line.dirty) {
+          reqInternal.lpn = line.tag / lineCountInSuperPage;
+          reqInternal.ioFlag.set(line.tag % lineCountInSuperPage);
+
+          ftlTick = tick;
+          pFTL->write(reqInternal, ftlTick);
+          finishedAt = MAX(finishedAt, ftlTick);
+        }
+
+        line.valid = false;
+        
+      }
+    }
+    tick = MAX(tick, finishedAt);
+    tick += applyLatency(CPU::ICL__GENERIC_CACHE, CPU::FLUSH);
+  }
+}
 // True when flushed
 void GenericCache::flush(LPNRange &range, uint64_t &tick) {
   if (useReadCaching || useWriteCaching) {
