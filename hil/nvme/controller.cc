@@ -1637,7 +1637,7 @@ void Controller::flush_read(uint64_t now) {
 
 void Controller::handleRequest(uint64_t now) {
   // Check read queue
-  cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n\n";
+  //cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n\n";
   
   if(readRequestCounter >= 64) {
     flush_read(now);

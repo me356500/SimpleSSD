@@ -967,7 +967,7 @@ void CPU::printLastStat() {
 
   debugprint(LOG_CPU, "Begin CPU power calculation");
 
-  calculatePower(power);
+  //calculatePower(power);
 
   debugprint(LOG_CPU, "Core:");
   debugprint(LOG_CPU, "  Area: %lf mm^2", power.core.area);
