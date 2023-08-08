@@ -502,7 +502,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   uint64_t readFinishedAt = tick;
   uint64_t writeFinishedAt = tick;
   uint64_t eraseFinishedAt = tick;
-
+  cout << "start_gc\n";
   if (blocksToReclaim.size() == 0) {
     return;
   }
@@ -613,7 +613,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     eraseFinishedAt = MAX(eraseFinishedAt, beginAt);
   }
-
+  cout << "end_gc\n";
   tick = MAX(writeFinishedAt, eraseFinishedAt);
   tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::DO_GARBAGE_COLLECTION);
 }
