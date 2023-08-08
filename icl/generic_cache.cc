@@ -543,7 +543,16 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
 
   return ret;
 }
-
+bool GenericCache::check_cache_full(Request &req, uint64_t &tick) {
+  uint32_t setIdx = calcSetIndex(req.range.slpn);
+  uint32_t wayIdx = getEmptyWay(setIdx, tick);
+  bool ret = 1;
+      
+  if (wayIdx != waySize) {
+    ret = 0;  
+  }
+  return ret;
+}
 // True when cold-miss/hit
 bool GenericCache::write(Request &req, uint64_t &tick) {
   bool ret = false;
@@ -556,13 +565,15 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
 
   FTL::Request reqInternal(lineCountInSuperPage, req);
 
+  dirty = true;
+  /*
   if (req.length < lineSize) {
     dirty = true;
   }
   else {
     pFTL->write(reqInternal, flash);
   }
-
+  */
   if (useWriteCaching) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;
@@ -694,7 +705,6 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
             evictData[row][col] = pLineToFlush;
           }
         }
-
         tick += getCacheLatency() * setSize * waySize * 8;
 
         evictCache(tick, true);

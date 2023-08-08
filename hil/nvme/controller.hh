@@ -23,7 +23,10 @@
 #define __HIL_NVME_CONTROLLER__
 
 #include <list>
+#include <stdexcept>
+#include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "hil/nvme/abstract_subsystem.hh"
 #include "hil/nvme/def.hh"
@@ -91,6 +94,7 @@ class Controller : public StatObject {
   CQueue **ppCQueue;  //!< Completion Queue array
   SQueue **ppSQueue;  //!< Submission Queue array
 
+
   std::list<SQEntryWrapper> lSQFIFO;  //!< Internal FIFO queue for submission
   std::list<CQEntryWrapper> lCQFIFO;  //!< Internal FIFO queue for completion
 
@@ -107,6 +111,8 @@ class Controller : public StatObject {
   Event requestEvent;
   Event completionEvent;
   uint32_t requestCounter;
+  uint32_t readRequestCounter;
+  uint32_t writeRequestCounter;
   uint32_t maxRequest;
   uint64_t requestInterval;
   uint64_t workInterval;
@@ -140,6 +146,7 @@ class Controller : public StatObject {
   bool getCoalescing(uint16_t);
 
   void collectSQueue(DMAFunction &, void *);
+  void flush_read(uint64_t);
   void handleRequest(uint64_t);
   void work();
 

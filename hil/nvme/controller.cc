@@ -20,6 +20,8 @@
 #include "hil/nvme/controller.hh"
 
 #include <algorithm>
+#include <stddef.h>
+#include <limits.h>
 #include <cmath>
 
 #include "hil/nvme/interface.hh"
@@ -113,6 +115,8 @@ Controller::Controller(Interface *intrface, ConfigReader &c)
   requestEvent = allocate([this](uint64_t now) { handleRequest(now); });
   completionEvent = allocate([this](uint64_t) { completion(); });
   requestCounter = 0;
+  readRequestCounter = 0;
+  writeRequestCounter = 0;
   maxRequest = conf.readUint(CONFIG_NVME, NVME_MAX_REQUEST_COUNT);
   workInterval = conf.readUint(CONFIG_NVME, NVME_WORK_INTERVAL);
   requestInterval = workInterval / maxRequest;
@@ -606,7 +610,12 @@ int Controller::deleteSQueue(uint16_t sqid) {
         wrapper.entry.dword2.sqHead = sqHead;
         wrapper.entry.dword3.status = status;
         submit(wrapper);
-
+        if(iter->entry.dword0.opcode == OPCODE_READ) {
+          readRequestCounter--;
+        }
+        else if(iter->entry.dword0.opcode == OPCODE_WRITE) {
+          writeRequestCounter--;
+        }
         iter = lSQFIFO.erase(iter);
       }
     }
@@ -644,7 +653,12 @@ int Controller::abort(uint16_t sqid, uint16_t cid) {
       wrapper.entry.dword3.status = status;
 
       submit(wrapper);
-
+      if(iter->entry.dword0.opcode == OPCODE_READ) {
+        readRequestCounter--;
+      }
+      else if(iter->entry.dword0.opcode == OPCODE_WRITE) {
+        writeRequestCounter--;
+      }
       // Remove
       iter = lSQFIFO.erase(iter);
       ret = 1;  // Aborted
@@ -1558,13 +1572,14 @@ void Controller::work() {
       registers.status |= 0x00000008;  // Shutdown processing complete
 
       shutdownReserved = false;
-
+      readRequestCounter = 0;
+      writeRequestCounter = 0;
       lSQFIFO.clear();
     }
 
     // Call request event
     requestCounter = 0;
-
+    
     execute(CPU::NVME__CONTROLLER, CPU::COLLECT_SQ, doRequest);
   };
 
@@ -1579,13 +1594,69 @@ void Controller::work() {
 
   collectSQueue(cpuHandler, pContext);
 }
+void Controller::flush_read(uint64_t now) {
+  std::list<SQEntryWrapper> tmp;
+  for (auto iter = lSQFIFO.begin(); iter != lSQFIFO.end(); iter++)  {
+    if(iter->entry.dword0.opcode == OPCODE_READ) {
+      tmp.push_back(*iter);
+      iter = lSQFIFO.erase(iter);
+    }
+  } 
+  for(auto &i : tmp) {
+    SQEntryWrapper *front = new SQEntryWrapper(i);
+    readRequestCounter--;
+    // Process command
+    DMAFunction doSubmit = [this](uint64_t, void *context) {
+      SQEntryWrapper *req = (SQEntryWrapper *)context;
+
+      pSubsystem->submitCommand(
+          *req, [this](CQEntryWrapper &response) { submit(response); });
+
+      delete req;
+    };
+
+    if (bUseOCSSD) {
+      execute(CPU::NVME__OCSSD, CPU::SUBMIT_COMMAND, doSubmit, front);
+    }
+    else {
+      execute(CPU::NVME__SUBSYSTEM, CPU::SUBMIT_COMMAND, doSubmit, front);
+    }
+    requestCounter++;
+
+    if (lSQFIFO.size() > 0 && requestCounter < maxRequest) {
+      schedule(requestEvent, now + requestInterval);
+    }
+    else {
+      schedule(workEvent, MAX(now + requestInterval, lastWorkAt + workInterval));
+    }
+  }
+  
+}
+
 
 void Controller::handleRequest(uint64_t now) {
+  // Check read queue
+  cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : " << lSQFIFO.size() << "\n\n";
+  if(readRequestCounter >= 64) {
+    flush_read(now);
+  }
   // Check SQFIFO
   if (lSQFIFO.size() > 0) {
+    /*
+    if(writeRequestCounter < 64) {
+      return;
+    }
+    */
     SQEntryWrapper *front = new SQEntryWrapper(lSQFIFO.front());
     lSQFIFO.pop_front();
-
+    
+    if(front->entry.dword0.opcode == OPCODE_WRITE ) {
+      flush_read(now);
+      writeRequestCounter--;
+    }
+    else if(front->entry.dword0.opcode == OPCODE_READ) {
+      readRequestCounter--;
+    }
     // Process command
     DMAFunction doSubmit = [this](uint64_t, void *context) {
       SQEntryWrapper *req = (SQEntryWrapper *)context;
@@ -1632,12 +1703,16 @@ bool Controller::checkQueue(SQueue *pQueue, DMAFunction &func, void *context) {
 
   DMAFunction doRead = [this](uint64_t now, void *context) {
     QueueContext *pContext = (QueueContext *)context;
-
     lSQFIFO.push_back(SQEntryWrapper(
         pContext->entry, pContext->pQueue->getID(), pContext->pQueue->getCQID(),
         pContext->pQueue->getHead(), pContext->oldhead));
     pContext->function(now, pContext->context);
-
+    if(pContext->entry.dword0.opcode == OPCODE_READ) {
+      readRequestCounter++;
+    }
+    else if(pContext->entry.dword0.opcode == OPCODE_WRITE) {
+      writeRequestCounter++;
+    }
     delete pContext;
   };
 

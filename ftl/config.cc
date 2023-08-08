@@ -41,7 +41,7 @@ const char NAME_USE_RANDOM_IO_TWEAK[] = "EnableRandomIOTweak";
 
 Config::Config() {
   mapping = PAGE_MAPPING;
-  overProvision = 0.25f;
+  overProvision = 0.05f;
   gcThreshold = 0.05f;
   badBlockThreshold = 100000;
   fillingMode = FILLING_MODE_0;
