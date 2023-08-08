@@ -1629,6 +1629,7 @@ void Controller::flush_read(uint64_t now) {
     else {
       schedule(workEvent, MAX(now + requestInterval, lastWorkAt + workInterval));
     }
+    now += requestInterval;
   }
   
 }
@@ -1636,22 +1637,19 @@ void Controller::flush_read(uint64_t now) {
 
 void Controller::handleRequest(uint64_t now) {
   // Check read queue
-  cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : " << lSQFIFO.size() << "\n\n";
+  cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n\n";
+  
   if(readRequestCounter >= 64) {
     flush_read(now);
   }
   // Check SQFIFO
   if (lSQFIFO.size() > 0) {
-    /*
-    if(writeRequestCounter < 64) {
-      return;
-    }
-    */
     SQEntryWrapper *front = new SQEntryWrapper(lSQFIFO.front());
     lSQFIFO.pop_front();
     
     if(front->entry.dword0.opcode == OPCODE_WRITE ) {
-      flush_read(now);
+      if(readRequestCounter)
+        flush_read(now);
       writeRequestCounter--;
     }
     else if(front->entry.dword0.opcode == OPCODE_READ) {
@@ -1675,13 +1673,18 @@ void Controller::handleRequest(uint64_t now) {
     }
   }
 
+
   // Call request event
   requestCounter++;
 
-  if (lSQFIFO.size() > 0 && requestCounter < maxRequest) {
+  if ((lSQFIFO.size() > 0 && requestCounter < maxRequest) ) {
+    // keep handle request
+    //cout << "req\n";
     schedule(requestEvent, now + requestInterval);
   }
   else {
+    // keep collect request
+    //cout << "work\n";
     schedule(workEvent, MAX(now + requestInterval, lastWorkAt + workInterval));
   }
 }
