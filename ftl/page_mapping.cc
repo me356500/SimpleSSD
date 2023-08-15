@@ -481,6 +481,37 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // Select victims from the blocks with the lowest weight
   nBlocks = MIN(nBlocks, weight.size());
+  uint32_t chip_id = 0, seg_count = 0;
+  vector<uint32_t> chip_count(33, 0);
+  
+  for(int i = 0; i < 4; ++i) {
+    uint32_t superblk_id = weight.at(i).first;
+    auto block = blocks.find(superblk_id);
+
+    if (block == blocks.end()) {
+      panic("Invalid block");
+    }
+
+    uint64_t LPN;
+    cout << "Superblk ID : " <<  superblk_id << "\n";
+
+    for(int i = 0; i < 32; ++i) {
+      LPN = block->second.getpLPN()[i];
+      auto mapping = table.find(LPN); // block idx , page idx
+      uint32_t chip_idx = mapping->second[0].first % 32;
+      cout << "channel : " << chip_idx << "\n";
+      chip_count[chip_idx]++;
+    }
+
+    for(int i = 0; i < 32; ++i) {
+      if(chip_count[i] > seg_count) {
+        chip_id = i;
+        seg_count = chip_count[i];
+      }
+    }
+
+    cout << "Max channel : " << chip_id << "\n";
+  }
 
   for (uint64_t i = 0; i < nBlocks; i++) {
     list.push_back(weight.at(i).first);

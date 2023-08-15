@@ -271,6 +271,10 @@ bool Block::getPageInfo(uint32_t pageIndex, std::vector<uint64_t> &lpn,
   return map.any();
 }
 
+uint64_t *Block::getpLPN() {
+  return pLPNs;
+}
+
 bool Block::read(uint32_t pageIndex, uint32_t idx, uint64_t tick) {
   bool read = false;
 

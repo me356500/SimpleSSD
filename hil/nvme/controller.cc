@@ -1655,7 +1655,7 @@ void Controller::handleRequest(uint64_t now) {
     else if(front->entry.dword0.opcode == OPCODE_READ) {
       readRequestCounter--;
     }
-    
+
     // Process command
     DMAFunction doSubmit = [this](uint64_t, void *context) {
       SQEntryWrapper *req = (SQEntryWrapper *)context;

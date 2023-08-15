@@ -32,6 +32,7 @@ namespace FTL {
 class Block {
  private:
   uint32_t idx;
+  // superblock
   uint32_t pageCount;
   uint32_t ioUnitInPage;
   uint32_t *pNextWritePageIndex;
@@ -47,7 +48,7 @@ class Block {
   uint64_t **ppLPNs;
 
   uint64_t lastAccessed;
-  uint32_t eraseCount;
+  uint32_t eraseCount; //ECs
 
  public:
   Block(uint32_t, uint32_t, uint32_t);
@@ -65,11 +66,13 @@ class Block {
   uint32_t getValidPageCountRaw();
   uint32_t getDirtyPageCount();
   uint32_t getNextWritePageIndex();
+  uint64_t  *getpLPN();
   uint32_t getNextWritePageIndex(uint32_t);
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
   bool read(uint32_t, uint32_t, uint64_t);
   bool write(uint32_t, uint64_t, uint32_t, uint64_t);
   void erase();
+
   void invalidate(uint32_t, uint32_t);
 };
 
