@@ -351,7 +351,7 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
   debugprint(LOG_ICL_GENERIC_CACHE,
              "READ  | REQ %7u-%-4u | LCA %" PRIu64 " | SIZE %" PRIu64,
              req.reqID, req.reqSubID, req.range.slpn, req.length);
-
+  // useReadCaching = 0
   if (useReadCaching) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;
@@ -571,7 +571,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
     wayIdx = getValidWay(req.range.slpn, tick);
 
     // Can we update old data?
-    // Cannot modify cache
+    // Do not modift cache
     if (0) { 
       uint64_t arrived = tick;
 
@@ -756,7 +756,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
 }
 
 void GenericCache::flush_cache(uint64_t &tick) {
-  if (useReadCaching || useWriteCaching) {
+  if (useWriteCaching) {
     uint64_t ftlTick = tick;
     uint64_t finishedAt = tick;
     FTL::Request reqInternal(lineCountInSuperPage);
@@ -773,7 +773,6 @@ void GenericCache::flush_cache(uint64_t &tick) {
           pFTL->write(reqInternal, ftlTick);
           finishedAt = MAX(finishedAt, ftlTick);
         }
-
         line.valid = false;
         
       }

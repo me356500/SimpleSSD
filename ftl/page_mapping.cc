@@ -268,7 +268,6 @@ void PageMapping::format(LPNRange &range, uint64_t &tick) {
   std::sort(list.begin(), list.end());
   auto last = std::unique(list.begin(), list.end());
   list.erase(last, list.end());
-
   // Do GC only in specified blocks
   doGarbageCollection(list, tick);
 
@@ -502,7 +501,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   uint64_t readFinishedAt = tick;
   uint64_t writeFinishedAt = tick;
   uint64_t eraseFinishedAt = tick;
-  cout << "start_gc\n";
+  cout << "start_gc : " << blocksToReclaim.size() << "\n";
   if (blocksToReclaim.size() == 0) {
     return;
   }
@@ -605,7 +604,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
-
+  cout << "erase req : " << eraseRequests.size() << '\n';
   for (auto &iter : eraseRequests) {
     beginAt = readFinishedAt;
 
@@ -613,9 +612,10 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     eraseFinishedAt = MAX(eraseFinishedAt, beginAt);
   }
-  cout << "end_gc\n";
+ 
   tick = MAX(writeFinishedAt, eraseFinishedAt);
   tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::DO_GARBAGE_COLLECTION);
+  cout << "end_gc : "<< blocksToReclaim.size() << "\n";
 }
 
 void PageMapping::readInternal(Request &req, uint64_t &tick) {
@@ -674,6 +674,33 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
 void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   PAL::Request palRequest(req);
   std::unordered_map<uint32_t, Block>::iterator block;
+  static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
+
+  if (freeBlockRatio() < gcThreshold) {
+    if (!sendToPAL) {
+      panic("ftl: GC triggered while in initialization");
+    }
+
+    std::vector<uint32_t> list;
+    uint64_t beginAt = tick;
+
+    selectVictimBlock(list, beginAt);
+
+    debugprint(LOG_FTL_PAGE_MAPPING,
+               "GC   | On-demand | %u blocks will be reclaimed", list.size());
+    cout << list.size() << " " << stat.reclaimedBlocks << " blocks will be reclaimed\n" ;
+    cout << nFreeBlocks << " " << " free blocks remain\n";
+    cout << freeBlockRatio() << " vs " << gcThreshold << "\n";
+    doGarbageCollection(list, beginAt);
+
+    debugprint(LOG_FTL_PAGE_MAPPING,
+               "GC   | Done | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")", tick,
+               beginAt, beginAt - tick);
+
+    stat.gcCount++;
+    stat.reclaimedBlocks += list.size();
+  }
+  
   auto mappingList = table.find(req.lpn);
   uint64_t beginAt;
   uint64_t finishedAt = tick;
@@ -785,30 +812,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
   // GC if needed
   // I assumed that init procedure never invokes GC
-  static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
-
-  if (freeBlockRatio() < gcThreshold) {
-    if (!sendToPAL) {
-      panic("ftl: GC triggered while in initialization");
-    }
-
-    std::vector<uint32_t> list;
-    uint64_t beginAt = tick;
-
-    selectVictimBlock(list, beginAt);
-
-    debugprint(LOG_FTL_PAGE_MAPPING,
-               "GC   | On-demand | %u blocks will be reclaimed", list.size());
-
-    doGarbageCollection(list, beginAt);
-
-    debugprint(LOG_FTL_PAGE_MAPPING,
-               "GC   | Done | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")", tick,
-               beginAt, beginAt - tick);
-
-    stat.gcCount++;
-    stat.reclaimedBlocks += list.size();
-  }
+  
 }
 
 void PageMapping::trimInternal(Request &req, uint64_t &tick) {

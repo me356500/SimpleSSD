@@ -1391,7 +1391,7 @@ void Controller::collectSQueue(DMAFunction &func, void *context) {
   static uint16_t wrrHigh = conf.readUint(CONFIG_NVME, NVME_WRR_HIGH);
   static uint16_t wrrMedium = conf.readUint(CONFIG_NVME, NVME_WRR_MEDIUM);
   DMAContext *pContext = new DMAContext(func, context);
-
+  //cout << "Collect SQ\n";
   static DMAFunction doQueue = [](uint64_t now, void *context) {
     DMAContext *pContext = (DMAContext *)context;
 
@@ -1623,7 +1623,7 @@ void Controller::flush_read(uint64_t now) {
     }
     requestCounter++;
 
-    if (lSQFIFO.size() > 0 && requestCounter < maxRequest) {
+    if ((lSQFIFO.size() > 0 && requestCounter < maxRequest) ||(lSQFIFO.size() > 0 && lSQFIFO.size() != readRequestCounter + writeRequestCounter )) {
       schedule(requestEvent, now + requestInterval);
     }
     else {
@@ -1637,16 +1637,16 @@ void Controller::flush_read(uint64_t now) {
 
 void Controller::handleRequest(uint64_t now) {
   // Check read queue
-  //cout << "\nRead : " << readRequestCounter << "\n Write : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n\n";
+  //cout << "\nRead : " << readRequestCounter << "\nWrite : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n";
   
   if(readRequestCounter >= 64) {
     flush_read(now);
   }
   // Check SQFIFO
-  if (lSQFIFO.size() > 0) {
+  if (lSQFIFO.size() > 0 || (lSQFIFO.size() != readRequestCounter + writeRequestCounter )) {
     SQEntryWrapper *front = new SQEntryWrapper(lSQFIFO.front());
     lSQFIFO.pop_front();
-    
+
     if(front->entry.dword0.opcode == OPCODE_WRITE ) {
       if(readRequestCounter)
         flush_read(now);
@@ -1655,6 +1655,7 @@ void Controller::handleRequest(uint64_t now) {
     else if(front->entry.dword0.opcode == OPCODE_READ) {
       readRequestCounter--;
     }
+    
     // Process command
     DMAFunction doSubmit = [this](uint64_t, void *context) {
       SQEntryWrapper *req = (SQEntryWrapper *)context;
@@ -1673,18 +1674,15 @@ void Controller::handleRequest(uint64_t now) {
     }
   }
 
-
   // Call request event
   requestCounter++;
 
-  if ((lSQFIFO.size() > 0 && requestCounter < maxRequest) ) {
+  if ((lSQFIFO.size() > 0 && requestCounter < maxRequest)||(lSQFIFO.size() != readRequestCounter + writeRequestCounter ) ) {
     // keep handle request
-    //cout << "req\n";
     schedule(requestEvent, now + requestInterval);
   }
   else {
     // keep collect request
-    //cout << "work\n";
     schedule(workEvent, MAX(now + requestInterval, lastWorkAt + workInterval));
   }
 }
@@ -1699,7 +1697,7 @@ bool Controller::checkQueue(SQueue *pQueue, DMAFunction &func, void *context) {
 
     QueueContext(DMAFunction &f) : pQueue(nullptr), function(f) {}
   };
-
+  //cout << "CheckQueue\n";
   QueueContext *queueContext = new QueueContext(func);
   queueContext->pQueue = pQueue;
   queueContext->context = context;
@@ -1709,16 +1707,16 @@ bool Controller::checkQueue(SQueue *pQueue, DMAFunction &func, void *context) {
     lSQFIFO.push_back(SQEntryWrapper(
         pContext->entry, pContext->pQueue->getID(), pContext->pQueue->getCQID(),
         pContext->pQueue->getHead(), pContext->oldhead));
-    pContext->function(now, pContext->context);
     if(pContext->entry.dword0.opcode == OPCODE_READ) {
       readRequestCounter++;
     }
     else if(pContext->entry.dword0.opcode == OPCODE_WRITE) {
       writeRequestCounter++;
     }
+    pContext->function(now, pContext->context);
     delete pContext;
   };
-
+  //cout << "check : " << pQueue->getItemCount() << "\n";
   if (pQueue->getItemCount() > 0) {
     queueContext->oldhead = pQueue->getHead();
     pQueue->getData(&queueContext->entry, doRead, queueContext);
