@@ -118,6 +118,9 @@ class Controller : public StatObject {
   uint64_t workInterval;
   uint64_t lastWorkAt;
 
+  //debug
+  uint64_t flush_counter;
+
   bool checkQueue(SQueue *, DMAFunction &, void *);
 
  public:
@@ -146,7 +149,7 @@ class Controller : public StatObject {
   bool getCoalescing(uint16_t);
 
   void collectSQueue(DMAFunction &, void *);
-  void flush_read(uint64_t);
+  void flush(NVM_OPCODE);
   void handleRequest(uint64_t);
   void work();
 

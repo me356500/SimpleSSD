@@ -36,7 +36,7 @@ class Block {
   uint32_t pageCount;
   uint32_t ioUnitInPage;
   uint32_t *pNextWritePageIndex;
-
+  uint32_t *pNextWritePageIndex_Horizontal;
   // Following variables are used when ioUnitInPage == 1
   Bitset *pValidBits;
   Bitset *pErasedBits;
@@ -66,8 +66,10 @@ class Block {
   uint32_t getValidPageCountRaw();
   uint32_t getDirtyPageCount();
   uint32_t getNextWritePageIndex();
+  uint32_t getNextWritePageIndex_Horizontal();
   uint64_t  *getpLPN();
   uint32_t getNextWritePageIndex(uint32_t);
+  uint32_t getNextWritePageIndex_Horizontal(uint32_t);
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
   bool read(uint32_t, uint32_t, uint64_t);
   bool write(uint32_t, uint64_t, uint32_t, uint64_t);
