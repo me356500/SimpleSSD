@@ -481,7 +481,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // Select victims from the blocks with the lowest weight
   nBlocks = MIN(nBlocks, weight.size());
-  uint32_t chip_id = 0, seg_count = 0;
+  //uint32_t chip_id = 0;
+  uint32_t seg_count = 0;
   vector<uint32_t> chip_count(33, 0);
   
   for(int i = 0; i < 4; ++i) {
@@ -493,24 +494,27 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
 
     uint64_t LPN;
-    cout << "Superblk ID : " <<  superblk_id << "\n";
+   // cout << "Superblk ID : " <<  superblk_id << 
+  //    " parity : " << block->second.getparityPageIndex() << "\n";
 
-    for(int i = 0; i < 32; ++i) {
+    for(int i = 0; i < 128; ++i) {
+      if((uint32_t) i == block->second.getparityPageIndex())
+        continue;
       LPN = block->second.getpLPN()[i];
       auto mapping = table.find(LPN); // block idx , page idx
       uint32_t chip_idx = mapping->second[0].first % 32;
-      cout << "channel : " << chip_idx << "\n";
+      //cout << "channel : " << chip_idx << "\n";
       chip_count[chip_idx]++;
     }
 
     for(int i = 0; i < 32; ++i) {
       if(chip_count[i] > seg_count) {
-        chip_id = i;
+        //chip_id = i;
         seg_count = chip_count[i];
       }
     }
 
-    cout << "Max channel : " << chip_id << "\n";
+    //cout << "Max channel : " << chip_id << "\n";
   }
 
   for (uint64_t i = 0; i < nBlocks; i++) {
@@ -548,6 +552,10 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     // Copy valid pages to free block
     for (uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; pageIndex++) {
       // Valid?
+      if(pageIndex == block->second.getparityPageIndex()) {
+        block->second.invalidate(block->second.getparityPageIndex(), 0);
+        continue;
+      }
       if (block->second.getPageInfo(pageIndex, lpns, bit)) {
         if (!bRandomTweak) {
           bit.set();
@@ -735,6 +743,8 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   auto mappingList = table.find(req.lpn);
   uint64_t beginAt;
   uint64_t finishedAt = tick;
+  uint32_t parityPageIndex;
+  //uint64_t parityLPN;
   bool readBeforeWrite = false;
 
   if (mappingList != table.end()) {
@@ -748,9 +758,15 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
           // Invalidate current page
           block->second.invalidate(mapping.second, idx);
+
+          // when superblock no valid data
+          if(!block->second.getValidPageCount()) {
+            block->second.erase();
+          }
         }
       }
     }
+   
   }
   else {
     // Create empty mapping
@@ -798,7 +814,20 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
       block->second.write(pageIndex, req.lpn, idx, beginAt);
 
-      // Read old data if needed (Only executed when bRandomTweak = false)
+      // write parity 
+      parityPageIndex = block->second.getparityPageIndex();
+
+      if(parityPageIndex == 127) {
+        // calculate parity
+        uint64_t parity_lpn = 0;
+        for(uint32_t i = 0; i < 128; ++i) {
+          if(i == parityPageIndex)
+            continue;
+          parity_lpn ^= block->second.getpLPN()[i];
+        }
+        // write parity
+        block->second.write(parityPageIndex, parity_lpn, idx, beginAt);
+      }
       // Maybe some other init procedures want to perform 'partial-write'
       // So check sendToPAL variable
       if (readBeforeWrite && sendToPAL) {
