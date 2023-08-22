@@ -1644,14 +1644,14 @@ void Controller::flush(NVM_OPCODE OP) {
 
 
 void Controller::handleRequest(uint64_t now) {
-  if(lSQFIFO.size() > 63) {
-    cout << "\nRead : " << readRequestCounter << "\nWrite : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n";
-    cout << "flush : " << flush_counter << "\n";
-  }
+  //if(lSQFIFO.size() > 63) {
+    //cout << "\nRead : " << readRequestCounter << "\nWrite : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n";
+    //cout << "flush : " << flush_counter << "\n";
+  //}
   if(readRequestCounter > 63) {
     flush(OPCODE_READ);
   }
-  if(writeRequestCounter > 63 || lSQFIFO.size() > 63) {
+  if(writeRequestCounter > 63 ) {
     // avoid read response
     flush(OPCODE_READ);
     flush(OPCODE_WRITE);
@@ -1691,6 +1691,7 @@ void Controller::handleRequest(uint64_t now) {
 
   if ((lSQFIFO.size() > 63 && requestCounter < maxRequest) || (lSQFIFO.size() != readRequestCounter + writeRequestCounter ) ) {
     // keep handle request
+    flush(OPCODE_FLUSH);
     schedule(requestEvent, now + requestInterval);
   }
   else {

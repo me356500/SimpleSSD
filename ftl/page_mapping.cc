@@ -496,6 +496,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     cout << "Superblk ID : " <<  superblk_id << "\n";
 
     for(int i = 0; i < 32; ++i) {
+      if((uint32_t) i == block->second.getparityPageIndex())
+        continue;
       LPN = block->second.getpLPN()[i];
       auto mapping = table.find(LPN); // block idx , page idx
       uint32_t chip_idx = mapping->second[0].first % 32;
@@ -547,6 +549,11 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     // Copy valid pages to free block
     for (uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; pageIndex++) {
+      /*
+      if(pageIndex == block->second.getparityPageIndex()) {
+        block->second.invalidate(block->second.getparityPageIndex(), 0);
+        continue;
+      }*/
       // Valid?
       if (block->second.getPageInfo(pageIndex, lpns, bit)) {
         if (!bRandomTweak) {
@@ -748,6 +755,11 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
           // Invalidate current page
           block->second.invalidate(mapping.second, idx);
+
+          // when superblock no valid data
+          if(!block->second.getValidPageCount()) {
+            block->second.erase();
+          }
         }
       }
     }
@@ -797,6 +809,15 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
       beginAt = tick;
 
       block->second.write(pageIndex, req.lpn, idx, beginAt);
+      
+      if(block->second.getValidPageCount() == 31) {
+        palRequest.blockIndex = block->second.getBlockIndex();
+        palRequest.pageIndex = block->second.getparityPageIndex();
+        palRequest.ioFlag.set();
+        // write parity
+        pPAL->write(palRequest, beginAt);
+
+      }
 
       // Read old data if needed (Only executed when bRandomTweak = false)
       // Maybe some other init procedures want to perform 'partial-write'

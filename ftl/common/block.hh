@@ -60,6 +60,7 @@ class Block {
   Block &operator=(Block &&);       // Move assignment
 
   uint32_t getBlockIndex() const;
+  uint32_t getparityPageIndex() const;
   uint64_t getLastAccessedTime();
   uint32_t getEraseCount();
   uint32_t getValidPageCount();
