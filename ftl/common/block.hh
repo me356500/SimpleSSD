@@ -49,7 +49,7 @@ class Block {
 
   uint64_t lastAccessed;
   uint32_t eraseCount; //ECs
-
+  uint32_t parityPageIndex;
  public:
   Block(uint32_t, uint32_t, uint32_t);
   Block(const Block &);      // Copy constructor
