@@ -35,8 +35,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
       pLPNs(nullptr),
       ppLPNs(nullptr),
       lastAccessed(0),
-      eraseCount(0),
-      parityPageIndex(0) {
+      eraseCount(0) {
   if (ioUnitInPage == 1) {
     pValidBits = new Bitset(pageCount);
     pErasedBits = new Bitset(pageCount);
@@ -58,8 +57,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   else {
     panic("Invalid I/O unit in page");
   }
-  // parity rotate
-  parityPageIndex = blockIdx % 128;
+  parityPageIndex = blockIdx % 32;
   // C-style allocation
   pNextWritePageIndex = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
   pNextWritePageIndex_Horizontal = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
@@ -105,8 +103,7 @@ Block::Block(Block &&old) noexcept
       erasedBits(std::move(old.erasedBits)),
       ppLPNs(std::move(old.ppLPNs)),
       lastAccessed(std::move(old.lastAccessed)),
-      eraseCount(std::move(old.eraseCount)),
-      parityPageIndex(std::move(old.parityPageIndex)) {
+      eraseCount(std::move(old.eraseCount)) {
   // TODO Use std::exchange to set old value to null (C++14)
   old.idx = 0;
   old.pageCount = 0;
@@ -119,7 +116,6 @@ Block::Block(Block &&old) noexcept
   old.ppLPNs = nullptr;
   old.lastAccessed = 0;
   old.eraseCount = 0;
-  old.parityPageIndex = 0;
 }
 
 Block::~Block() {
@@ -172,7 +168,6 @@ Block &Block::operator=(Block &&rhs) {
     ppLPNs = std::move(rhs.ppLPNs);
     lastAccessed = std::move(rhs.lastAccessed);
     eraseCount = std::move(rhs.eraseCount);
-    parityPageIndex = std::move(rhs.parityPageIndex);
 
     rhs.pNextWritePageIndex = nullptr;
     rhs.pNextWritePageIndex_Horizontal = nullptr;
@@ -182,7 +177,6 @@ Block &Block::operator=(Block &&rhs) {
     rhs.ppLPNs = nullptr;
     rhs.lastAccessed = 0;
     rhs.eraseCount = 0;
-    rhs.parityPageIndex = 0;
   }
 
   return *this;
@@ -348,7 +342,6 @@ bool Block::write(uint32_t pageIndex, uint64_t lpn, uint32_t idx,
     lastAccessed = tick;
 
     if (ioUnitInPage == 1) {
-
       pErasedBits->reset(pageIndex);
       pValidBits->set(pageIndex);
 
@@ -362,10 +355,6 @@ bool Block::write(uint32_t pageIndex, uint64_t lpn, uint32_t idx,
     }
 
     pNextWritePageIndex[idx] = pageIndex + 1;
-    
-    // skip parity page
-    if(pNextWritePageIndex[idx] == parityPageIndex)
-      pNextWritePageIndex[idx]++;
   }
   else {
     panic("Write to non erased page");
@@ -389,7 +378,7 @@ void Block::erase() {
   }
 
   memset(pNextWritePageIndex, 0, sizeof(uint32_t) * ioUnitInPage);
-  memset(pNextWritePageIndex_Horizontal, 0, sizeof(uint32_t) * ioUnitInPage);
+
   eraseCount++;
 }
 
