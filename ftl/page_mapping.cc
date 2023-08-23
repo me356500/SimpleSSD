@@ -483,9 +483,10 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   nBlocks = MIN(nBlocks, weight.size());
   uint32_t chip_id = 0, seg_count = 0;
   vector<uint32_t> chip_count(33, 0);
-  
-  for(int i = 0; i < 4; ++i) {
-    uint32_t superblk_id = weight.at(i).first;
+  vector<uint32_t> parity_chip(4, 0);
+  //uint32_t parity_chip;
+  for(int j = 0; j < 4; ++j) {
+    uint32_t superblk_id = weight.at(j).first;
     auto block = blocks.find(superblk_id);
 
     if (block == blocks.end()) {
@@ -495,12 +496,14 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     uint64_t LPN;
     cout << "Superblk ID : " <<  superblk_id << "\n";
 
-    for(int i = 0; i < 32; ++i) {
-      if((uint32_t) i == block->second.getparityPageIndex())
-        continue;
+    for(uint32_t i = 0; i < 32; ++i) {
+
       LPN = block->second.getpLPN()[i];
       auto mapping = table.find(LPN); // block idx , page idx
       uint32_t chip_idx = mapping->second[0].first % 32;
+      if(i == block->second.getparityPageIndex()) {
+        parity_chip[j] = chip_idx;
+      }
       cout << "channel : " << chip_idx << "\n";
       chip_count[chip_idx]++;
     }
@@ -513,6 +516,16 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
 
     cout << "Max channel : " << chip_id << "\n";
+  }
+  // swap to same parity chip
+  if(parity_chip[0] == parity_chip[1]) {
+
+  }
+  else if (parity_chip[0] == parity_chip[2]) {
+    swap(weight[1], weight[2]);
+  }
+  else if(parity_chip[0] == parity_chip[3]) {
+    swap(weight[1], weight[3]);
   }
 
   for (uint64_t i = 0; i < nBlocks; i++) {
