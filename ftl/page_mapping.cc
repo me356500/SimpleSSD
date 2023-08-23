@@ -828,8 +828,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         palRequest.pageIndex = block->second.getparityPageIndex();
         palRequest.ioFlag.set();
         // write parity
-        pPAL->write(palRequest, beginAt);
-
+        pPAL->write(palRequest, beginAt, 1);
       }
 
       // Read old data if needed (Only executed when bRandomTweak = false)

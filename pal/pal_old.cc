@@ -121,18 +121,20 @@ void PALOLD::read(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::write(Request &req, uint64_t &tick) {
+void PALOLD::write(Request &req, uint64_t &tick, bool one_page) {
   uint64_t finishedAt = tick;
   ::Command cmd(tick, 0, OPER_WRITE, param.superPageSize);
   std::vector<::CPDPBP> list;
 
   printPPN(req, "WRITE");
 
-  convertCPDPBP(req, list);
-
+  convertCPDPBP(req, list, one_page);
+  
   for (auto &iter : list) {
-    printCPDPBP(iter, "WRITE");
-
+    if(one_page)
+      printCPDPBP(iter, "WRITE_PARITY");
+    else 
+      printCPDPBP(iter, "WRITE");
     pal->submit(cmd, iter);
     stat.writeCount++;
 
@@ -163,7 +165,7 @@ void PALOLD::erase(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
+void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_page) {
   ::CPDPBP addr;
   static uint32_t pageAllocation = conf.getPageAllocationConfig();
   static uint8_t superblock = conf.getSuperblockConfig();
@@ -251,6 +253,7 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
   // Index of ioFlag
   tmp = 0;
 
+  // count == 1
   if (count == 4) {
     list.reserve(value[0] * value[1] * value[2] * value[3]);
 
@@ -303,15 +306,32 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
     }
   }
   else if (count == 1) {
-    list.reserve(value[0]);
-
-    for (uint32_t l = 0; l < value[0]; l++) {
+    
+    if(one_page) {
+      list.reserve(1);
+    }
+    else {
+      list.reserve(value[0]);
+    }
+    // value[0] = channel
+    // read / write every channel
+    if(one_page) {
       if (req.ioFlag.test(tmp++)) {
-        *ptr[0] = l;
-
+        uint32_t channel_idx = req.blockIndex % 32;
+        *ptr[0] = channel_idx;
         list.push_back(addr);
       }
     }
+    else {
+      for (uint32_t l = 0; l < value[0]; l++) {
+        if (req.ioFlag.test(tmp++)) {
+          *ptr[0] = l;
+
+          list.push_back(addr);
+        }
+      }
+    }
+    
   }
   else {
     if (req.ioFlag.test(tmp++)) {
@@ -319,7 +339,7 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
     }
   }
 
-  if (tmp != pageInSuperPage) {
+  if (tmp != pageInSuperPage && !one_page) {
     panic("I/O flag size != # pages in super page");
   }
 }

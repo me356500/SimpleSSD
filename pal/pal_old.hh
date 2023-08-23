@@ -52,7 +52,7 @@ class PALOLD : public AbstractPAL {
     uint64_t eraseCount;
   } stat;
 
-  void convertCPDPBP(Request &, std::vector<::CPDPBP> &);
+  void convertCPDPBP(Request &, std::vector<::CPDPBP> &, bool = false);
   void printCPDPBP(::CPDPBP &, const char *);
   void printPPN(Request &, const char *);
 
@@ -61,7 +61,7 @@ class PALOLD : public AbstractPAL {
   ~PALOLD();
 
   void read(Request &, uint64_t &) override;
-  void write(Request &, uint64_t &) override;
+  void write(Request &, uint64_t &, bool = false) override;
   void erase(Request &, uint64_t &) override;
 
   void getStatList(std::vector<Stats> &, std::string) override;
