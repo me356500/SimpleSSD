@@ -121,8 +121,8 @@ void PAL::read(Request &req, uint64_t &tick) {
   pPAL->read(req, tick);
 }
 
-void PAL::write(Request &req, uint64_t &tick, bool one_page) {
-  pPAL->write(req, tick, one_page);
+void PAL::write(Request &req, uint64_t &tick, bool one_page, int SBtype) {
+  pPAL->write(req, tick, one_page, SBtype);
 }
 
 void PAL::erase(Request &req, uint64_t &tick) {

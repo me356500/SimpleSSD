@@ -203,7 +203,7 @@ void PageMapping::read(Request &req, uint64_t &tick) {
 
 void PageMapping::write(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
-
+  
   if (req.ioFlag.count() > 0) {
     writeInternal(req, tick);
 
@@ -481,52 +481,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // Select victims from the blocks with the lowest weight
   nBlocks = MIN(nBlocks, weight.size());
-  uint32_t chip_id = 0, seg_count = 0;
-  vector<uint32_t> chip_count(33, 0);
-  vector<uint32_t> parity_chip(4, 0);
-  //uint32_t parity_chip;
-  for(int j = 0; j < 4; ++j) {
-    uint32_t superblk_id = weight.at(j).first;
-    auto block = blocks.find(superblk_id);
 
-    if (block == blocks.end()) {
-      panic("Invalid block");
-    }
-
-    uint64_t LPN;
-    cout << "Superblk ID : " <<  superblk_id << "\n";
-
-    for(uint32_t i = 0; i < 32; ++i) {
-
-      LPN = block->second.getpLPN()[i];
-      auto mapping = table.find(LPN); // block idx , page idx
-      uint32_t chip_idx = mapping->second[0].first % 32;
-      if(i == block->second.getparityPageIndex()) {
-        parity_chip[j] = chip_idx;
-      }
-      cout << "channel : " << chip_idx << "\n";
-      chip_count[chip_idx]++;
-    }
-
-    for(int i = 0; i < 32; ++i) {
-      if(chip_count[i] > seg_count) {
-        chip_id = i;
-        seg_count = chip_count[i];
-      }
-    }
-
-    cout << "Max channel : " << chip_id << "\n";
-  }
-  // swap to same parity chip
-  if(parity_chip[0] == parity_chip[1]) {
-
-  }
-  else if (parity_chip[0] == parity_chip[2]) {
-    swap(weight[1], weight[2]);
-  }
-  else if(parity_chip[0] == parity_chip[3]) {
-    swap(weight[1], weight[3]);
-  }
 
   for (uint64_t i = 0; i < nBlocks; i++) {
     list.push_back(weight.at(i).first);
@@ -562,11 +517,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     // Copy valid pages to free block
     for (uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; pageIndex++) {
-      /*
-      if(pageIndex == block->second.getparityPageIndex()) {
-        block->second.invalidate(block->second.getparityPageIndex(), 0);
-        continue;
-      }*/
       // Valid?
       if (block->second.getPageInfo(pageIndex, lpns, bit)) {
         if (!bRandomTweak) {
@@ -652,6 +602,9 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     beginAt = readFinishedAt;
 
     pPAL->write(iter, beginAt);
+    
+    // write parity
+    pPAL->write(iter, beginAt, 1);
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
@@ -769,10 +722,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
           // Invalidate current page
           block->second.invalidate(mapping.second, idx);
 
-          // when superblock no valid data
-          if(!block->second.getValidPageCount()) {
-            block->second.erase();
-          }
         }
       }
     }
@@ -823,13 +772,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
       block->second.write(pageIndex, req.lpn, idx, beginAt);
       
-      if(block->second.getValidPageCount() == 31) {
-        palRequest.blockIndex = block->second.getBlockIndex();
-        palRequest.pageIndex = block->second.getparityPageIndex();
-        palRequest.ioFlag.set();
-        // write parity
-        pPAL->write(palRequest, beginAt, 1);
-      }
 
       // Read old data if needed (Only executed when bRandomTweak = false)
       // Maybe some other init procedures want to perform 'partial-write'
@@ -860,8 +802,11 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         else {
           palRequest.ioFlag.set();
         }
-
+        
         pPAL->write(palRequest, beginAt);
+
+        // write parity
+        pPAL->write(palRequest, beginAt, 1);
       }
 
       finishedAt = MAX(finishedAt, beginAt);

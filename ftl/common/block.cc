@@ -57,7 +57,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   else {
     panic("Invalid I/O unit in page");
   }
-  parityPageIndex = blockIdx % 32;
+  parityChannelIndex = blockIdx % 32;
   // C-style allocation
   pNextWritePageIndex = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
   pNextWritePageIndex_Horizontal = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
@@ -186,8 +186,8 @@ uint32_t Block::getBlockIndex() const {
   return idx;
 }
 
-uint32_t Block::getparityPageIndex() const {
-  return parityPageIndex;
+uint32_t Block::getparityChannelIndex() const {
+  return parityChannelIndex;
 }
 
 uint64_t Block::getLastAccessedTime() {

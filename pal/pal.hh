@@ -54,7 +54,7 @@ class PAL : public StatObject {
   ~PAL();
 
   void read(Request &, uint64_t &);
-  void write(Request &, uint64_t &, bool = false);
+  void write(Request &, uint64_t &, bool = false, int = 1);
   void erase(Request &, uint64_t &);
   void copyback(uint32_t, uint32_t, uint32_t, uint64_t &);
 

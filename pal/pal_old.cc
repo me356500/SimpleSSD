@@ -121,18 +121,18 @@ void PALOLD::read(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::write(Request &req, uint64_t &tick, bool one_page) {
+void PALOLD::write(Request &req, uint64_t &tick, bool one_page, int SBtype) {
   uint64_t finishedAt = tick;
   ::Command cmd(tick, 0, OPER_WRITE, param.superPageSize);
   std::vector<::CPDPBP> list;
 
   printPPN(req, "WRITE");
 
-  convertCPDPBP(req, list, one_page);
-  
+  convertCPDPBP(req, list, one_page, SBtype);
+
   for (auto &iter : list) {
     if(one_page)
-      printCPDPBP(iter, "WRITE_PARITY");
+      printCPDPBP(iter, "PARITY");
     else 
       printCPDPBP(iter, "WRITE");
     pal->submit(cmd, iter);
@@ -165,7 +165,7 @@ void PALOLD::erase(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_page) {
+void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_page, int SBtype) {
   ::CPDPBP addr;
   static uint32_t pageAllocation = conf.getPageAllocationConfig();
   static uint8_t superblock = conf.getSuperblockConfig();
@@ -311,21 +311,36 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
       list.reserve(1);
     }
     else {
-      list.reserve(value[0]);
+      list.reserve(value[0] - 1);
     }
     // value[0] = channel
     // read / write every channel
+    uint32_t parityChannelIdx = req.blockIndex % 32;
     if(one_page) {
       if (req.ioFlag.test(tmp++)) {
-        uint32_t channel_idx = req.blockIndex % 32;
-        *ptr[0] = channel_idx;
+        
+        *ptr[0] = parityChannelIdx;
         list.push_back(addr);
       }
     }
-    else {
+    else if(SBtype == horizontal){
       for (uint32_t l = 0; l < value[0]; l++) {
+        if(l == parityChannelIdx) {
+          tmp++;
+          continue;
+        }
         if (req.ioFlag.test(tmp++)) {
           *ptr[0] = l;
+
+          list.push_back(addr);
+        }
+      }
+    }
+    else if(SBtype == vertical) {
+      *ptr[0] = 0;
+      for (uint32_t l = 0; l < value[0]; l++) {
+        if (req.ioFlag.test(tmp++)) {
+          addr.Page++;
 
           list.push_back(addr);
         }
