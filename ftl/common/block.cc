@@ -57,7 +57,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   else {
     panic("Invalid I/O unit in page");
   }
-  parityChannelIndex = blockIdx % 32;
+
   // C-style allocation
   pNextWritePageIndex = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
   pNextWritePageIndex_Horizontal = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
@@ -187,7 +187,7 @@ uint32_t Block::getBlockIndex() const {
 }
 
 uint32_t Block::getparityChannelIndex() const {
-  return parityChannelIndex;
+  return idx % 32;
 }
 
 uint64_t Block::getLastAccessedTime() {
@@ -196,6 +196,35 @@ uint64_t Block::getLastAccessedTime() {
 
 uint32_t Block::getEraseCount() {
   return eraseCount;
+}
+
+uint32_t Block::getPartialValidPageCount(uint32_t idx) {
+  uint32_t ret = 0;
+
+  // 256 pages 0~63 64~127 128~191 192~255
+  if(ioUnitInPage == 1)
+  {
+    for(uint32_t pageIndex = 64 * idx; pageIndex < 64 * (idx + 1); ++pageIndex) 
+    {
+      uint8_t data = pValidBits->getData(pageIndex);
+      if(data & (0x01 << (pageIndex % 8))) 
+      {
+        ret++;
+      }
+    }
+  }
+  else
+  {
+    for(uint32_t pageIndex = 64 * idx; pageIndex < 64 * (idx + 1); ++pageIndex) 
+    {
+      if(validBits[pageIndex].any()) 
+      {
+        ret++;
+      }
+    }
+  }
+  
+  return ret;
 }
 
 uint32_t Block::getValidPageCount() {

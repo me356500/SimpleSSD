@@ -481,12 +481,216 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // Select victims from the blocks with the lowest weight
   nBlocks = MIN(nBlocks, weight.size());
+  
+  /* 
+    weight : block index , page valid count
+    parity SB mean parity Channel
+  
+  */
+  if(weight.size() < 4) {
+    debugprint(LOG_FTL_PAGE_MAPPING,
+               "WEIGHT %u BLOCK %u", weight.size(), blocks.size());
+  }
 
+  vector<uint32_t> paritySBCount(blk_per_superblk, 0);
+  vector<uint32_t> MGCcandidate(MGC_segments, 0);
+  uint32_t parityBlkIdx = 0;
+  uint32_t maxCount = 0;
+  uint32_t MGCcopydata = 0;
+
+  // MLCgetGCvictimGreedy.c:50
+  // Greedy select 4 segments
+  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  {
+    uint32_t copydata = 256 * (blk_per_superblk / MGC_segments);
+    for(uint32_t j = 0; j < weight.size(); ++j) 
+    {
+      auto curBlock = blocks.find(weight.at(j).first);
+      if(curBlock->second.getPartialValidPageCount(i) < copydata) 
+      {
+        copydata = curBlock->second.getPartialValidPageCount(i);
+        MGCcandidate[i] = curBlock->second.getBlockIndex();
+      }
+    }
+    MGCcopydata += copydata;
+  }
+
+  // MLCgetGCvictimGreedy.c:148
+  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  {
+    auto block = blocks.find(MGCcandidate[i]);
+    paritySBCount[block->second.getparityChannelIndex()]++;
+  }
+
+  // MLCgetGCvictimGreedy.c:149
+  // find the most concentrated parity channel
+  for(uint32_t i = 0; i < blk_per_superblk; ++i) 
+  {
+    if(paritySBCount[i] > maxCount) 
+    {
+      maxCount = paritySBCount[i];
+      parityBlkIdx = i;
+    }
+  }
+
+  // MLCgetGCvictimGreedy.c:157
+  // make sure all candidate have same parity block index (channel)
+  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  {
+    auto MGCblock = blocks.find(MGCcandidate[i]);
+    if(MGCblock->second.getparityChannelIndex() != parityBlkIdx) 
+    {
+      uint32_t copydata = 256 * (blk_per_superblk / MGC_segments);
+
+      for(uint32_t j = 0; j < weight.size(); ++j) 
+      {
+        auto block = blocks.find(weight.at(j).first);
+
+        if(block->second.getparityChannelIndex() == parityBlkIdx 
+          && copydata > block->second.getPartialValidPageCount(i)) 
+        {
+          copydata = block->second.getPartialValidPageCount(i);
+          MGCcandidate[i] = block->second.getBlockIndex();
+          break;
+        }
+      }
+
+      MGCcopydata = MGCcopydata + copydata
+        - MGCblock->second.getPartialValidPageCount(i);
+    }
+    if(MGCcandidate[i] % blk_per_superblk != parityBlkIdx) 
+    {
+      panic("same parity block error");
+    }
+  }
+
+  // MLCgetGCvictimGreedy.c:187 twoSB
+  // Inoder to restrict superblock (2) : MGCcandidate[0] & most repeated SB
+  vector<uint32_t> sameSBcount(MGC_segments, 0);
+  uint32_t mostSB = 0;
+  maxCount = 0;
+  mostSB = MGCcandidate[0];
+
+  for(uint32_t i = 1; i < MGC_segments; ++i) 
+  {
+    if(MGCcandidate[i] != MGCcandidate[0]) 
+    {
+      sameSBcount[i]++;
+      for(uint32_t j = 0; j < i; ++j) 
+      {
+        if(MGCcandidate[i] == MGCcandidate[j]) 
+        {
+          sameSBcount[j]++;
+          break;
+        }
+      }
+    }
+  }
+  if(sameSBcount[0] != 0) 
+  {
+    panic("sameSBcount[0] error");
+  }
+
+  // MLCgetGCvictimGreedy.c:207
+  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  {
+    if(sameSBcount[i] >= maxCount && MGCcandidate[i] != MGCcandidate[0])
+    {
+      maxCount = sameSBcount[i];
+      mostSB = MGCcandidate[i];
+    }
+  }
+
+
+  // MLCgetGCvictimGreedy.c:215
+  for(uint32_t i = 1; i < MGC_segments; ++i)
+  {
+    auto blk0 = blocks.find(MGCcandidate[0]);
+    auto blkSB = blocks.find(mostSB);
+    auto blk_i = blocks.find(MGCcandidate[i]);
+    uint32_t seg0_count = blk0->second.getPartialValidPageCount(i);
+    uint32_t segSB_count = blkSB->second.getPartialValidPageCount(i);
+    uint32_t seg_i_count = blk_i->second.getPartialValidPageCount(i);
+    // partialvalid have not done
+    //  seg 1 ~ 3 choose less valid page segment between 0 and mostSB
+    if(seg0_count <= segSB_count)
+    {
+      MGCcopydata = MGCcopydata + seg0_count - seg_i_count;
+      MGCcandidate[i] = MGCcandidate[0];
+    }
+    else
+    {
+      MGCcopydata = MGCcopydata + segSB_count - seg_i_count;
+      MGCcandidate[i] = mostSB;
+    }
+  }
+
+  // end of greedy choose from weight list
+  // MLCgetGCvictimGreedy.c:500
+  // calculate parity stat
+  /*
+  uint32_t largestChip = 0, largestSeg = 0, largestSB = 0;
+  vector<uint32_t> sameChip(blk_per_superblk, 0), sameSeg(MGC_segments, 0)
+    , sameSB(MGC_segments, 0);
+  
+  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  {
+    sameChip[MGCcandidate[i] % blk_per_superblk]++;
+    sameSeg[MGCcandidate[i] % blk_per_superblk / (blk_per_superblk / MGC_segments)]++;
+    uint32_t j = 0;
+    for(; j < i; ++j) 
+    {
+      if(MGCcandidate[i] == MGCcandidate[j])
+        break;
+    }
+    sameSB[j]++;
+    if(i > 0) {
+      //segDiff = segD
+    }
+  }
+  for(uint32_t i = 0; i < blk_per_superblk; ++i)
+  {
+    if(sameChip[i] > largestChip)
+      largestChip = sameChip[i];
+    if(sameSB[i] > largestSB)
+      largestSB = sameSB[i];
+  }
+  */
+  
+  // calculate rewrite parity
+  for(uint32_t i = 1; i < MGC_segments; ++i) 
+  {
+    uint32_t j = 0;
+    for(; j < i; ++j) {
+      if(MGCcandidate[i] == MGCcandidate[j])
+        break;
+    }  
+    if(j == i)
+      MGCcopydata += 256;
+  }
+  auto GCcandidate = blocks.find(weight[0].first);
+  uint32_t threshold = GCcandidate->second.getValidPageCount();
+
+  // Choose between GC and MGC
+  if(MGCcopydata < threshold) 
+  {
+    list.push_back(MGCcandidate[0]);
+    if(MGCcandidate[0] != mostSB) 
+    {
+      list.push_back(mostSB);
+    }
+  }
+  else 
+  {
+    list.push_back(GCcandidate->second.getBlockIndex());
+  }
+
+  /* origin code
 
   for (uint64_t i = 0; i < nBlocks; i++) {
     list.push_back(weight.at(i).first);
   }
-
+  */
   tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::SELECT_VICTIM_BLOCK);
 }
 
@@ -604,7 +808,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     pPAL->write(iter, beginAt);
     
     // write parity
-    pPAL->write(iter, beginAt, 1);
+    pPAL->write(iter, beginAt, parity);
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
@@ -806,7 +1010,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         pPAL->write(palRequest, beginAt);
 
         // write parity
-        pPAL->write(palRequest, beginAt, 1);
+        pPAL->write(palRequest, beginAt, parity);
       }
 
       finishedAt = MAX(finishedAt, beginAt);

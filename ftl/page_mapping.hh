@@ -29,6 +29,10 @@
 #include "ftl/ftl.hh"
 #include "pal/pal.hh"
 
+#define parity 1
+#define MGC_segments 4
+#define blk_per_superblk 32
+
 namespace SimpleSSD {
 
 namespace FTL {

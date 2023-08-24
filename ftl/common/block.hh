@@ -49,7 +49,6 @@ class Block {
 
   uint64_t lastAccessed;
   uint32_t eraseCount; //ECs
-  uint32_t parityChannelIndex;
 
  public:
   Block(uint32_t, uint32_t, uint32_t);
@@ -64,6 +63,7 @@ class Block {
   uint32_t getparityChannelIndex() const;
   uint64_t getLastAccessedTime();
   uint32_t getEraseCount();
+  uint32_t getPartialValidPageCount(uint32_t);
   uint32_t getValidPageCount();
   uint32_t getValidPageCountRaw();
   uint32_t getDirtyPageCount();
