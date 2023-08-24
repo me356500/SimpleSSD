@@ -198,6 +198,22 @@ uint32_t Block::getEraseCount() {
   return eraseCount;
 }
 
+uint32_t Block::getBlockPageCount(uint32_t channel) {
+  uint32_t ret = 0;
+  // ioUnitInpage == 32
+  if (ioUnitInPage == 1) {
+    panic("ioUnitInPage error");
+  }
+
+  // pageindex, channel index
+  for(uint32_t i = 0; i < 256; ++i)
+  {
+    ret += validBits[i].test(channel);
+  }
+
+  return ret;
+}
+
 uint32_t Block::getPartialValidPageCount(uint32_t idx) {
   uint32_t ret = 0;
 
@@ -215,12 +231,9 @@ uint32_t Block::getPartialValidPageCount(uint32_t idx) {
   }
   else
   {
-    for(uint32_t pageIndex = 64 * idx; pageIndex < 64 * (idx + 1); ++pageIndex) 
+    for(uint32_t channel = idx * 8; channel < (idx + 1) * 8; ++channel) 
     {
-      if(validBits[pageIndex].any()) 
-      {
-        ret++;
-      }
+      ret += getBlockPageCount(channel);
     }
   }
   

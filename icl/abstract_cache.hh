@@ -32,6 +32,7 @@ typedef struct _Line {
   uint64_t tag;
   uint64_t lastAccessed;
   uint64_t insertedAt;
+  uint64_t length;
   bool dirty;
   bool valid;
 

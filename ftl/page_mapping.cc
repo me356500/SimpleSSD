@@ -669,7 +669,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
       MGCcopydata += 256;
   }
   auto GCcandidate = blocks.find(weight[0].first);
-  uint32_t threshold = GCcandidate->second.getValidPageCount();
+  uint32_t threshold = GCcandidate->second.getValidPageCountRaw();
 
   // Choose between GC and MGC
   if(MGCcopydata < threshold) 

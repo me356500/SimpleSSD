@@ -49,6 +49,7 @@ class Bitset {
   bool none() noexcept;
   uint32_t count() noexcept;
   uint32_t size() noexcept;
+  uint8_t getData(uint32_t) noexcept;
   void set() noexcept;
   void set(uint32_t, bool = true) noexcept;
   void reset() noexcept;

@@ -43,6 +43,7 @@ class Block {
   uint64_t *pLPNs;
 
   // Following variables are used when ioUnitInPage > 1
+  // 256 * 32
   std::vector<Bitset> validBits;
   std::vector<Bitset> erasedBits;
   uint64_t **ppLPNs;
@@ -64,6 +65,7 @@ class Block {
   uint64_t getLastAccessedTime();
   uint32_t getEraseCount();
   uint32_t getPartialValidPageCount(uint32_t);
+  uint32_t getBlockPageCount(uint32_t);
   uint32_t getValidPageCount();
   uint32_t getValidPageCountRaw();
   uint32_t getDirtyPageCount();

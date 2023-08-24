@@ -115,6 +115,10 @@ void Bitset::set() noexcept {
   data[allocSize - 1] = mask;
 }
 
+uint8_t Bitset::getData(uint32_t idx) noexcept {
+  return data[idx / 8];
+}
+
 void Bitset::set(uint32_t idx, bool value) noexcept {
   data[idx / 8] &= ~(0x01 << (idx % 8));
 
