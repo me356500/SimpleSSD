@@ -65,6 +65,7 @@ class Block {
   uint64_t getLastAccessedTime();
   uint32_t getEraseCount();
   uint32_t getPartialValidPageCount(uint32_t);
+  uint32_t getStripePageCount(uint32_t);
   uint32_t getBlockPageCount(uint32_t);
   uint32_t getValidPageCount();
   uint32_t getValidPageCountRaw();
@@ -72,6 +73,9 @@ class Block {
   uint32_t getNextWritePageIndex();
   uint32_t getNextWritePageIndex_Horizontal();
   uint64_t  *getpLPN();
+  bool getValidBits(uint32_t, uint32_t);
+  bool getErasedBits(uint32_t, uint32_t);
+  uint64_t  getppLPN(uint32_t, uint32_t);
   uint32_t getNextWritePageIndex(uint32_t);
   uint32_t getNextWritePageIndex_Horizontal(uint32_t);
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
@@ -80,6 +84,10 @@ class Block {
   void erase();
 
   void invalidate(uint32_t, uint32_t);
+
+  void setValidBits(uint32_t, uint32_t, bool);
+  void setErasedBits(uint32_t, uint32_t, bool);
+  void setppLPN(uint32_t, uint32_t, uint64_t);
 };
 
 }  // namespace FTL

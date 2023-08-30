@@ -417,6 +417,36 @@ void PageMapping::calculateVictimWeight(
   }
 }
 
+void PageMapping::exchange_seg(uint32_t &dist, uint32_t &src, uint32_t seg_id) {
+  if(src == dist)
+    return;
+  auto dist_block = blocks.find(dist);
+  auto src_block = blocks.find(src);
+  uint32_t channel = seg_id * (blk_per_superblk / MGC_segments);
+  // pageindex, channel idx
+  for(uint32_t i = 0; i < 8; ++i) 
+  {
+    for(uint32_t pageIndex = 0; pageIndex < 256; ++pageIndex) {
+      uint32_t idx = channel + i;
+      uint64_t dist_lpn = dist_block->second.getppLPN(pageIndex, idx);
+      uint64_t src_lpn = src_block->second.getppLPN(pageIndex, idx);
+      dist_block->second.setppLPN(pageIndex, idx, src_lpn);
+      src_block->second.setppLPN(pageIndex, idx, dist_lpn);
+
+      bool dist_valid = dist_block->second.getValidBits(pageIndex, idx);
+      bool src_valid = src_block->second.getValidBits(pageIndex, idx);
+      dist_block->second.setValidBits(pageIndex, idx, src_valid);
+      src_block->second.setValidBits(pageIndex, idx, dist_valid);
+
+      bool dist_erase = dist_block->second.getErasedBits(pageIndex, idx);
+      bool src_erase = src_block->second.getErasedBits(pageIndex, idx);
+      dist_block->second.setErasedBits(pageIndex, idx, src_erase);
+      src_block->second.setErasedBits(pageIndex, idx, dist_erase);
+    }
+    
+  }
+}
+
 void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
                                     uint64_t &tick) {
   static const GC_MODE mode = (GC_MODE)conf.readInt(CONFIG_FTL, FTL_GC_MODE);
@@ -533,7 +563,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
   }
 
-  // MLCgetGCvictimGreedy.c:157
+  // MLCgetGCvictimGreedy.c:157 same_chip_parity
   // make sure all candidate have same parity block index (channel)
   for(uint32_t i = 0; i < MGC_segments; ++i) 
   {
@@ -558,10 +588,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
       MGCcopydata = MGCcopydata + copydata
         - MGCblock->second.getPartialValidPageCount(i);
     }
-    if(MGCcandidate[i] % blk_per_superblk != parityBlkIdx) 
-    {
-      panic("same parity block error");
-    }
+    assert(MGCcandidate[i] % blk_per_superblk == parityBlkIdx);
   }
 
   // MLCgetGCvictimGreedy.c:187 twoSB
@@ -586,10 +613,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
       }
     }
   }
-  if(sameSBcount[0] != 0) 
-  {
-    panic("sameSBcount[0] error");
-  }
+  assert(sameSBcount[0] == 0);
 
   // MLCgetGCvictimGreedy.c:207
   for(uint32_t i = 0; i < MGC_segments; ++i) 
@@ -611,7 +635,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     uint32_t seg0_count = blk0->second.getPartialValidPageCount(i);
     uint32_t segSB_count = blkSB->second.getPartialValidPageCount(i);
     uint32_t seg_i_count = blk_i->second.getPartialValidPageCount(i);
-    // partialvalid have not done
+
     //  seg 1 ~ 3 choose less valid page segment between 0 and mostSB
     if(seg0_count <= segSB_count)
     {
@@ -625,9 +649,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
   }
 
-  // end of greedy choose from weight list
   // MLCgetGCvictimGreedy.c:500
-  // calculate parity stat
   /*
   uint32_t largestChip = 0, largestSeg = 0, largestSB = 0;
   vector<uint32_t> sameChip(blk_per_superblk, 0), sameSeg(MGC_segments, 0)
@@ -672,19 +694,50 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   uint32_t threshold = GCcandidate->second.getValidPageCountRaw();
 
   // Choose between GC and MGC
+  uint32_t paritySeg = 0;
+  uint32_t MGC = 0;
   if(MGCcopydata < threshold) 
   {
+    MGC = 1;
     list.push_back(MGCcandidate[0]);
-    if(MGCcandidate[0] != mostSB) 
-    {
-      list.push_back(mostSB);
-    }
   }
   else 
   {
+    MGC = 0;
     list.push_back(GCcandidate->second.getBlockIndex());
   }
 
+  if(MGC) 
+  {
+    // exchange segment to MGCcandidate[0]
+    // cannot use move assignment (granularity different)
+    for(uint32_t i = 0; i < MGC_segments; ++i) 
+    {
+      exchange_seg(MGCcandidate[paritySeg], MGCcandidate[i], i);
+    }
+
+    // rewrite parity
+    if(MGCcandidate[0] != mostSB) 
+    {
+      PAL::Request req(param.ioUnitInPage);
+      req.blockIndex = mostSB;
+      debugprint(LOG_FTL_PAGE_MAPPING,
+               "WRITE SEGMENT PARITY");
+      for(uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; ++pageIndex) 
+      {
+        req.pageIndex = pageIndex;
+        if(bRandomTweak) {
+          req.ioFlag.reset();
+          req.ioFlag.set(mostSB % 32);
+        }
+        else {
+          req.ioFlag.set();
+        }
+        pPAL->write(req, tick, parity);
+      }
+    }
+    
+  }
   /* origin code
 
   for (uint64_t i = 0; i < nBlocks; i++) {
@@ -706,7 +759,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   uint64_t readFinishedAt = tick;
   uint64_t writeFinishedAt = tick;
   uint64_t eraseFinishedAt = tick;
-  cout << "start_gc : " << blocksToReclaim.size() << "\n";
+
   if (blocksToReclaim.size() == 0) {
     return;
   }
@@ -823,7 +876,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
  
   tick = MAX(writeFinishedAt, eraseFinishedAt);
   tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::DO_GARBAGE_COLLECTION);
-  cout << "end_gc : "<< blocksToReclaim.size() << "\n";
 }
 
 void PageMapping::readInternal(Request &req, uint64_t &tick) {
@@ -882,31 +934,34 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
 void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   PAL::Request palRequest(req);
   std::unordered_map<uint32_t, Block>::iterator block;
-  static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
+  //static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
 
-  if (freeBlockRatio() < gcThreshold) {
-    if (!sendToPAL) {
+  // GcThreshold
+  if (nFreeBlocks <= 245) {
+    // get how much empty SB per GC
+    while(nFreeBlocks <= 250) {
+      if (!sendToPAL) {
       panic("ftl: GC triggered while in initialization");
-    }
+      }
 
-    std::vector<uint32_t> list;
-    uint64_t beginAt = tick;
+      std::vector<uint32_t> list;
+      uint64_t beginAt = tick;
 
-    selectVictimBlock(list, beginAt);
+      selectVictimBlock(list, beginAt);
 
-    debugprint(LOG_FTL_PAGE_MAPPING,
+      debugprint(LOG_FTL_PAGE_MAPPING,
                "GC   | On-demand | %u blocks will be reclaimed", list.size());
-    cout << list.size() << " " << stat.reclaimedBlocks << " blocks will be reclaimed\n" ;
-    cout << nFreeBlocks << " " << " free blocks remain\n";
-    cout << freeBlockRatio() << " vs " << gcThreshold << "\n";
-    doGarbageCollection(list, beginAt);
+      cout << list.size() << " " << stat.reclaimedBlocks << " blocks will be reclaimed\n" ;
+      cout << nFreeBlocks << " " << " free blocks remain\n";
+      doGarbageCollection(list, beginAt);
 
-    debugprint(LOG_FTL_PAGE_MAPPING,
+      debugprint(LOG_FTL_PAGE_MAPPING,
                "GC   | Done | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")", tick,
                beginAt, beginAt - tick);
 
-    stat.gcCount++;
-    stat.reclaimedBlocks += list.size();
+      stat.gcCount++;
+      stat.reclaimedBlocks += list.size();
+    }
   }
   
   auto mappingList = table.find(req.lpn);

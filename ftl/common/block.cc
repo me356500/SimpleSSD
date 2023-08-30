@@ -214,6 +214,18 @@ uint32_t Block::getBlockPageCount(uint32_t channel) {
   return ret;
 }
 
+uint32_t Block::getStripePageCount(uint32_t idx) {
+  uint32_t ret = 0;
+
+  // pageindex, channel index
+  for(uint32_t i = 0; i < 32; ++i)
+  {
+    ret += validBits[idx].test(i);
+  }
+
+  return ret;
+}
+
 uint32_t Block::getPartialValidPageCount(uint32_t idx) {
   uint32_t ret = 0;
 
@@ -342,6 +354,18 @@ uint64_t *Block::getpLPN() {
   return pLPNs;
 }
 
+bool Block::getValidBits(uint32_t pageIndex, uint32_t idx) {
+  return validBits.at(pageIndex).test(idx);
+}
+
+bool Block::getErasedBits(uint32_t pageIndex, uint32_t idx) {
+  return erasedBits.at(pageIndex).test(idx);
+}
+
+uint64_t Block::getppLPN(uint32_t pageIndex, uint32_t idx) {
+  return ppLPNs[pageIndex][idx];
+}
+
 bool Block::read(uint32_t pageIndex, uint32_t idx, uint64_t tick) {
   bool read = false;
 
@@ -431,6 +455,18 @@ void Block::invalidate(uint32_t pageIndex, uint32_t idx) {
   else {
     validBits.at(pageIndex).reset(idx);
   }
+}
+
+void Block::setValidBits(uint32_t pageIndex, uint32_t idx, bool value) {
+  validBits.at(pageIndex).set(idx, value);
+}
+
+void Block::setErasedBits(uint32_t pageIndex, uint32_t idx, bool value) {
+  erasedBits.at(pageIndex).set(idx, value);
+}
+
+void Block::setppLPN(uint32_t pageIndex, uint32_t idx, uint64_t lpn) {
+  ppLPNs[pageIndex][idx] = lpn;
 }
 
 }  // namespace FTL

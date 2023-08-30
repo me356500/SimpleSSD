@@ -352,7 +352,7 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
              "READ  | REQ %7u-%-4u | LCA %" PRIu64 " | SIZE %" PRIu64,
              req.reqID, req.reqSubID, req.range.slpn, req.length);
   // useReadCaching = 0
-  if (useReadCaching) {
+  if (0) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;
     uint64_t arrived = tick;
@@ -633,7 +633,6 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
         cacheData[setIdx][wayIdx].valid = true;
         cacheData[setIdx][wayIdx].dirty = dirty;
         cacheData[setIdx][wayIdx].tag = req.range.slpn;
-        cacheData[setIdx][wayIdx].length = req.length;
 
         // DRAM access
         pDRAM->write(&cacheData[setIdx][wayIdx], req.length, tick);
@@ -721,7 +720,6 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
         cacheData[setIdx][wayIdx].valid = true;
         cacheData[setIdx][wayIdx].dirty = true;
         cacheData[setIdx][wayIdx].tag = req.range.slpn;
-        cacheData[setIdx][wayIdx].length = req.length;
       }
 
       debugprint(LOG_ICL_GENERIC_CACHE,
@@ -763,24 +761,18 @@ void GenericCache::flush_cache(uint64_t &tick) {
     uint64_t finishedAt = tick;
     FTL::Request reqInternal(lineCountInSuperPage);
     debugprint(LOG_ICL_GENERIC_CACHE, "----- | Begin flush_cache");
-    uint32_t channel = 0;
     for (uint32_t setIdx = 0; setIdx < setSize; setIdx++) {
       for (uint32_t wayIdx = 0; wayIdx < waySize; wayIdx++) {
         Line &line = cacheData[setIdx][wayIdx];
         tick += getCacheLatency() * 8;
-        reqInternal.lpn = line.tag / lineCountInSuperPage;
-        ftlTick = tick;
-        if (cacheData[setIdx][wayIdx].length > 32768) 
-        {
-          ++channel;
+        if (line.dirty) {
+          reqInternal.lpn = line.tag / lineCountInSuperPage;
+          reqInternal.ioFlag.set(line.tag % lineCountInSuperPage);
+
+          ftlTick = tick;
+          pFTL->write(reqInternal, ftlTick);
+          finishedAt = MAX(finishedAt, ftlTick);
         }
-        // if it's same channel, FTL default write sequential
-
-        reqInternal.ioFlag.set(channel);
-        pFTL->write(reqInternal, ftlTick);
-
-        channel %= 32;
-        finishedAt = MAX(finishedAt, ftlTick);
         line.valid = false;
         
       }
