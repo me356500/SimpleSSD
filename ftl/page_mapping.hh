@@ -32,6 +32,8 @@
 #define parity 1
 #define MGC_segments 4
 #define blk_per_superblk 32
+#define GCbufSize 7936
+#define DEBUG
 
 namespace SimpleSSD {
 
@@ -56,6 +58,8 @@ class PageMapping : public AbstractFTL {
   bool bRandomTweak;
   uint32_t bitsetSize;
 
+  std::vector<PAL::Request> GCbuf;
+  
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;
@@ -70,8 +74,8 @@ class PageMapping : public AbstractFTL {
   void calculateVictimWeight(std::vector<std::pair<uint32_t, float>> &,
                              const EVICT_POLICY, uint64_t);
   void exchange_seg(uint32_t &, uint32_t &, uint32_t );
-  void selectVictimBlock(std::vector<uint32_t> &, uint64_t &);
-  void doGarbageCollection(std::vector<uint32_t> &, uint64_t &);
+  void selectVictimBlock(std::vector<uint32_t> &, uint64_t &, uint32_t &);
+  void doGarbageCollection(std::vector<uint32_t> &, uint64_t &, uint32_t &);
 
   float calculateWearLeveling();
   void calculateTotalPages(uint64_t &, uint64_t &);
