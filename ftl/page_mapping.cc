@@ -934,11 +934,11 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     pPAL->write(iter, beginAt);
     
     // write parity
-    pPAL->write(iter, beginAt, parity);
+    //pPAL->write(iter, beginAt, parity);
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
-  cout << "erase req : " << eraseRequests.size() << '\n';
+
   for (auto &iter : eraseRequests) {
     beginAt = readFinishedAt;
 
@@ -1024,8 +1024,10 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
       debugprint(LOG_FTL_PAGE_MAPPING,
                "GC   | On-demand | %u blocks will be reclaimed", list.size());
+#ifdef DEBUG
       cout << list.size() << " " << stat.reclaimedBlocks << " blocks will be reclaimed\n" ;
       cout << nFreeBlocks << " " << " free blocks remain\n";
+#endif
       doGarbageCollection(list, beginAt, MGC);
 
       debugprint(LOG_FTL_PAGE_MAPPING,
@@ -1138,7 +1140,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         pPAL->write(palRequest, beginAt);
 
         // write parity
-        pPAL->write(palRequest, beginAt, parity);
+        //pPAL->write(palRequest, beginAt, parity);
       }
 
       finishedAt = MAX(finishedAt, beginAt);

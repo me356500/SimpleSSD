@@ -311,7 +311,7 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
       list.reserve(1);
     }
     else {
-      list.reserve(value[0] - 1);
+      list.reserve(value[0]);
     }
     // value[0] = channel
     // read / write every channel
@@ -325,10 +325,6 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
     }
     else if(SBtype == horizontal){
       for (uint32_t l = 0; l < value[0]; l++) {
-        if(l == parityChannelIdx) {
-          tmp++;
-          continue;
-        }
         if (req.ioFlag.test(tmp++)) {
           *ptr[0] = l;
 
