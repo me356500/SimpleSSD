@@ -92,7 +92,7 @@ void ICL::read(Request &req, uint64_t &tick) {
              finishedAt - tick);
 
   tick = finishedAt;
-  tick += applyLatency(CPU::ICL, CPU::READ);
+  //tick += applyLatency(CPU::ICL, CPU::READ);
 }
 
 void ICL::write(Request &req, uint64_t &tick) {
@@ -124,7 +124,7 @@ void ICL::write(Request &req, uint64_t &tick) {
              finishedAt - tick);
 
   tick = finishedAt;
-  tick += applyLatency(CPU::ICL, CPU::WRITE);
+  //tick += applyLatency(CPU::ICL, CPU::WRITE);
 }
 
 void ICL::flush(LPNRange &range, uint64_t &tick) {

@@ -166,8 +166,11 @@ bool PageMapping::initialize() {
   }
 
   GCbuf.clear();
+  writeBuf.clear();
+  writeBuf.reserve(writeBufSize);
   segSB_time = 0;
   segSB_weight.clear();
+
   // Report
   calculateTotalPages(valid, invalid);
   debugprint(LOG_FTL_PAGE_MAPPING, "Filling finished. Page status:");
@@ -201,11 +204,37 @@ void PageMapping::read(Request &req, uint64_t &tick) {
     warn("FTL got empty request");
   }
 
-  tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::READ);
+  //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::READ);
 }
 
 void PageMapping::write(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
+  /*
+  writeBuf.emplace_back(req);
+
+  if (writeBuf.size() >= writeBufSize) 
+  {
+    for (auto &i : writeBuf) 
+    {
+      if (i.ioFlag.count() > 0)
+      {
+        writeInternal(req, tick);
+
+        debugprint(LOG_FTL_PAGE_MAPPING,
+               "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
+               ")",
+               req.lpn, begin, tick, tick - begin);
+      }
+      else
+      {
+        warn("FTL got empty request");
+      }
+    }
+
+    writeBuf.clear();
+    writeBuf.reserve(writeBufSize);
+  }
+  */
   
   if (req.ioFlag.count() > 0) {
     writeInternal(req, tick);
@@ -218,8 +247,8 @@ void PageMapping::write(Request &req, uint64_t &tick) {
   else {
     warn("FTL got empty request");
   }
-
-  tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
+  
+  //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
 }
 
 void PageMapping::trim(Request &req, uint64_t &tick) {
@@ -785,8 +814,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   uint64_t usec = end.tv_usec-start.tv_usec;
     
   segSB_time += (sec + (usec / 1000000.0));
-  
-#elif
+
+#else
 
   for (uint64_t i = 0; i < nBlocks; i++) {
     list.push_back(weight.at(i).first);
@@ -1032,7 +1061,7 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
     }
 
     tick = finishedAt;
-    tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::READ_INTERNAL);
+    //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::READ_INTERNAL);
   }
 }
 
@@ -1269,7 +1298,7 @@ void PageMapping::eraseInternal(PAL::Request &req, uint64_t &tick) {
   // Remove block from block list
   blocks.erase(block);
 
-  tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::ERASE_INTERNAL);
+  //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::ERASE_INTERNAL);
 }
 
 float PageMapping::calculateWearLeveling() {

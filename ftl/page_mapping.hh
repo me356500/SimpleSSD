@@ -34,6 +34,7 @@
 #define MGC_segments 4
 #define blk_per_superblk 32
 #define GCbufSize 7936
+#define writeBufSize 7936
 #define segSB
 
 namespace SimpleSSD {
@@ -60,6 +61,7 @@ class PageMapping : public AbstractFTL {
   uint32_t bitsetSize;
 
   std::vector<PAL::Request> GCbuf;
+  std::vector<PAL::Request> writeBuf;
   uint64_t segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   struct {

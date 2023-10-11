@@ -238,7 +238,7 @@ uint32_t GenericCache::getEmptyWay(uint32_t setIdx, uint64_t &tick) {
     Line &line = cacheData[setIdx][wayIdx];
 
     if (!line.valid) {
-      tick += getCacheLatency() * 8;
+      tick += getCacheLatency() * 0;
       // pDRAM->read(MAKE_META_ADDR(setIdx, wayIdx, offsetof(Line, insertedAt)),
       // 8, tick);
 
@@ -259,7 +259,7 @@ uint32_t GenericCache::getValidWay(uint64_t lca, uint64_t &tick) {
   for (wayIdx = 0; wayIdx < waySize; wayIdx++) {
     Line &line = cacheData[setIdx][wayIdx];
 
-    tick += getCacheLatency() * 8;
+    tick += getCacheLatency() * 0;
     // pDRAM->read(MAKE_META_ADDR(setIdx, wayIdx, offsetof(Line, tag)), 8,
     // tick);
 
@@ -564,7 +564,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
     pFTL->write(reqInternal, flash);
   }
   */
-  if (0) {
+  if (useWriteCaching) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;
 
@@ -642,11 +642,11 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
       // We have to flush
       // flush every set
       else {
-        //uint32_t row, col;  // Variable for I/O position (IOFlag)
+        uint32_t row, col;  // Variable for I/O position (IOFlag)
         uint32_t setToFlush = calcSetIndex(req.range.slpn);
 
-        flush_cache(tick);
-        /*
+        //flush_cache(tick);
+        
         for (setIdx = 0; setIdx < setSize; setIdx++) {
           for (wayIdx = 0; wayIdx < waySize; wayIdx++) {
             if (cacheData[setIdx][wayIdx].valid) {
@@ -702,7 +702,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
         tick += getCacheLatency() * setSize * waySize * 8;
 
         evictCache(tick, true);
-        */
+        
         // Update cacheline of current request
         setIdx = setToFlush;
         wayIdx = getEmptyWay(setIdx, tick);
@@ -792,7 +792,7 @@ void GenericCache::flush(LPNRange &range, uint64_t &tick) {
       for (uint32_t wayIdx = 0; wayIdx < waySize; wayIdx++) {
         Line &line = cacheData[setIdx][wayIdx];
 
-        tick += getCacheLatency() * 8;
+        //tick += getCacheLatency() * 8;
 
         if (line.tag >= range.slpn && line.tag < range.slpn + range.nlp) {
           if (line.dirty) {
@@ -810,7 +810,7 @@ void GenericCache::flush(LPNRange &range, uint64_t &tick) {
     }
 
     tick = MAX(tick, finishedAt);
-    tick += applyLatency(CPU::ICL__GENERIC_CACHE, CPU::FLUSH);
+    //tick += applyLatency(CPU::ICL__GENERIC_CACHE, CPU::FLUSH);
   }
 }
 
