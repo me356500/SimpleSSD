@@ -67,13 +67,13 @@ const uint8_t writeCycle = 7;
 const uint8_t eraseCycle = 5;
 
 Config::Config() {
-  channel = 32;
-  package = 1;
-  die = 1;
-  plane = 32;
-  block = 128;
-  page = 128;
-  pageSize = 4096;
+  channel = 8;
+  package = 4;
+  die = 2;
+  plane = 1;
+  block = 512;
+  page = 512;
+  pageSize = 16384;
   useMultiPlaneOperation = true;
   dmaSpeed = 400;
   dmaWidth = 8;

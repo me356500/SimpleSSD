@@ -68,7 +68,7 @@ else ()
   if (DEBUG_BUILD)
     set(CMAKE_CXX_FLAGS "-O0 ${CMAKE_CXX_FLAGS}")
   else ()
-    set(CMAKE_CXX_FLAGS "-O3 ${CMAKE_CXX_FLAGS}")
+    set(CMAKE_CXX_FLAGS "-O3 -march=native -mtune=native -fopenmp -rdynamic -pthread ${CMAKE_CXX_FLAGS}")
   endif ()
 
   if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

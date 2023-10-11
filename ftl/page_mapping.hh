@@ -28,12 +28,13 @@
 #include "ftl/common/block.hh"
 #include "ftl/ftl.hh"
 #include "pal/pal.hh"
+#include <sys/time.h>
 
 #define parity 1
 #define MGC_segments 4
 #define blk_per_superblk 32
 #define GCbufSize 7936
-#define DEBUG
+#define segSB
 
 namespace SimpleSSD {
 
@@ -59,7 +60,8 @@ class PageMapping : public AbstractFTL {
   uint32_t bitsetSize;
 
   std::vector<PAL::Request> GCbuf;
-  
+  uint64_t segSB_time;
+  vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;

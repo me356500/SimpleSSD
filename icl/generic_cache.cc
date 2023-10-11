@@ -564,7 +564,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
     pFTL->write(reqInternal, flash);
   }
   */
-  if (useWriteCaching) {
+  if (0) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;
 
@@ -764,7 +764,7 @@ void GenericCache::flush_cache(uint64_t &tick) {
     for (uint32_t setIdx = 0; setIdx < setSize; setIdx++) {
       for (uint32_t wayIdx = 0; wayIdx < waySize; wayIdx++) {
         Line &line = cacheData[setIdx][wayIdx];
-        tick += getCacheLatency() * 8;
+        //tick += getCacheLatency() * 8;
         if (line.dirty) {
           reqInternal.lpn = line.tag / lineCountInSuperPage;
           reqInternal.ioFlag.set(line.tag % lineCountInSuperPage);
@@ -778,7 +778,7 @@ void GenericCache::flush_cache(uint64_t &tick) {
       }
     }
     tick = MAX(tick, finishedAt);
-    tick += applyLatency(CPU::ICL__GENERIC_CACHE, CPU::FLUSH);
+    //tick += applyLatency(CPU::ICL__GENERIC_CACHE, CPU::FLUSH);
   }
 }
 // True when flushed

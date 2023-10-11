@@ -30,9 +30,6 @@ class PAL2;
 class PALStatistics;
 class Latency;
 
-#define vertical 0
-#define horizontal 1
-
 namespace SimpleSSD {
 
 namespace PAL {
@@ -46,8 +43,7 @@ class PALOLD : public AbstractPAL {
   Event flushEvent;
   EventFunction flushFunction;
 
-  uint64_t lastResetTick;
-  uint64_t planeMultiplier;
+  uint8_t lastResetTick;
 
   struct {
     uint64_t readCount;
@@ -55,7 +51,7 @@ class PALOLD : public AbstractPAL {
     uint64_t eraseCount;
   } stat;
 
-  void convertCPDPBP(Request &, std::vector<::CPDPBP> &, bool = false, int = 1);
+  void convertCPDPBP(Request &, std::vector<::CPDPBP> &);
   void printCPDPBP(::CPDPBP &, const char *);
   void printPPN(Request &, const char *);
 
@@ -64,7 +60,7 @@ class PALOLD : public AbstractPAL {
   ~PALOLD();
 
   void read(Request &, uint64_t &) override;
-  void write(Request &, uint64_t &, bool = false, int = 1) override;
+  void write(Request &, uint64_t &) override;
   void erase(Request &, uint64_t &) override;
 
   void getStatList(std::vector<Stats> &, std::string) override;

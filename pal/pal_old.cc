@@ -55,13 +55,6 @@ PALOLD::PALOLD(Parameter &p, ConfigReader &c)
       break;
   }
 
-  if (conf.readBoolean(CONFIG_PAL, NAND_USE_MULTI_PLANE_OP)) {
-    planeMultiplier = param.plane;
-  }
-  else {
-    planeMultiplier = 1;
-  }
-
   debugprint(LOG_PAL_OLD, "NAND timing:");
   debugprint(LOG_PAL_OLD, "Operation |     LSB    |     CSB    |     MSB    |  "
                           "  DMA 0   |    DMA ");
@@ -121,20 +114,18 @@ void PALOLD::read(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::write(Request &req, uint64_t &tick, bool one_page, int SBtype) {
+void PALOLD::write(Request &req, uint64_t &tick) {
   uint64_t finishedAt = tick;
   ::Command cmd(tick, 0, OPER_WRITE, param.superPageSize);
   std::vector<::CPDPBP> list;
 
   printPPN(req, "WRITE");
 
-  convertCPDPBP(req, list, one_page, SBtype);
+  convertCPDPBP(req, list);
 
   for (auto &iter : list) {
-    if(one_page)
-      printCPDPBP(iter, "PARITY");
-    else 
-      printCPDPBP(iter, "WRITE");
+    printCPDPBP(iter, "WRITE");
+
     pal->submit(cmd, iter);
     stat.writeCount++;
 
@@ -165,7 +156,7 @@ void PALOLD::erase(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
-void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_page, int SBtype) {
+void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list) {
   ::CPDPBP addr;
   static uint32_t pageAllocation = conf.getPageAllocationConfig();
   static uint8_t superblock = conf.getSuperblockConfig();
@@ -253,7 +244,6 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
   // Index of ioFlag
   tmp = 0;
 
-  // count == 1
   if (count == 4) {
     list.reserve(value[0] * value[1] * value[2] * value[3]);
 
@@ -306,43 +296,15 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
     }
   }
   else if (count == 1) {
-    
-    if(one_page) {
-      list.reserve(1);
-    }
-    else {
-      list.reserve(value[0]);
-    }
-    // value[0] = channel
-    // read / write every channel
-    uint32_t parityChannelIdx = req.blockIndex % 32;
-    if(one_page) {
+    list.reserve(value[0]);
+
+    for (uint32_t l = 0; l < value[0]; l++) {
       if (req.ioFlag.test(tmp++)) {
-        
-        *ptr[0] = parityChannelIdx;
+        *ptr[0] = l;
+
         list.push_back(addr);
       }
     }
-    else if(SBtype == horizontal){
-      for (uint32_t l = 0; l < value[0]; l++) {
-        if (req.ioFlag.test(tmp++)) {
-          *ptr[0] = l;
-
-          list.push_back(addr);
-        }
-      }
-    }
-    else if(SBtype == vertical) {
-      *ptr[0] = 0;
-      for (uint32_t l = 0; l < value[0]; l++) {
-        if (req.ioFlag.test(tmp++)) {
-          addr.Page++;
-
-          list.push_back(addr);
-        }
-      }
-    }
-    
   }
   else {
     if (req.ioFlag.test(tmp++)) {
@@ -350,7 +312,7 @@ void PALOLD::convertCPDPBP(Request &req, std::vector<::CPDPBP> &list, bool one_p
     }
   }
 
-  if (tmp != pageInSuperPage && !one_page) {
+  if (tmp != pageInSuperPage) {
     panic("I/O flag size != # pages in super page");
   }
 }
@@ -518,10 +480,9 @@ void PALOLD::getStatValues(std::vector<double> &values) {
   values.push_back(stat.writeCount);
   values.push_back(stat.eraseCount);
 
-  values.push_back(stat.readCount * param.pageSize * planeMultiplier);
-  values.push_back(stat.writeCount * param.pageSize * planeMultiplier);
-  values.push_back(stat.eraseCount * param.pageSize * param.page *
-                   planeMultiplier);
+  values.push_back(stat.readCount * param.pageSize);
+  values.push_back(stat.writeCount * param.pageSize);
+  values.push_back(stat.eraseCount * param.pageSize * param.page);
 
   stats->getReadBreakdown(breakdown);
   values.push_back(breakdown.dma0wait);
