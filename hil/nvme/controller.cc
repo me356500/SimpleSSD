@@ -1644,10 +1644,11 @@ void Controller::flush(NVM_OPCODE OP) {
 
 
 void Controller::handleRequest(uint64_t now) {
-  if(lSQFIFO.size() > 63) {
+  //if(lSQFIFO.size() > 63) {
     //cout << "\nRead : " << readRequestCounter << "\nWrite : " << writeRequestCounter << "\nTotal : "<< lSQFIFO.size() << "\n";
     //cout << "flush : " << flush_counter << "\n";
-  }
+  //}
+  /*
   if(readRequestCounter > 63) {
     flush(OPCODE_READ);
   }
@@ -1655,18 +1656,19 @@ void Controller::handleRequest(uint64_t now) {
     // avoid read response
     flush(OPCODE_READ);
     flush(OPCODE_WRITE);
-  }
+  }*/
   // Check SQFIFO
   if (lSQFIFO.size() > 0) {
     SQEntryWrapper *front = new SQEntryWrapper(lSQFIFO.front());
     lSQFIFO.pop_front();
 
+    /*
     if(front->entry.dword0.opcode == OPCODE_WRITE ) {
       writeRequestCounter--;
     }
     else if(front->entry.dword0.opcode == OPCODE_READ) {
       readRequestCounter--;
-    }
+    }*/
 
     // Process command
     DMAFunction doSubmit = [this](uint64_t, void *context) {
@@ -1689,9 +1691,10 @@ void Controller::handleRequest(uint64_t now) {
   // Call request event
   requestCounter++;
 
-  if ((lSQFIFO.size() > 63 && requestCounter < maxRequest) || (lSQFIFO.size() != readRequestCounter + writeRequestCounter ) ) {
+  //if ((lSQFIFO.size() > 63 && requestCounter < maxRequest) || (lSQFIFO.size() != readRequestCounter + writeRequestCounter ) ) {
+  if (lSQFIFO.size() > 0 && requestCounter < maxRequest) {
     // keep handle request
-    flush(OPCODE_FLUSH);
+    //flush(OPCODE_FLUSH);
     schedule(requestEvent, now + requestInterval);
   }
   else {

@@ -209,7 +209,9 @@ void PageMapping::read(Request &req, uint64_t &tick) {
 
 void PageMapping::write(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
-  /*
+
+#ifdef writebuffer
+
   writeBuf.emplace_back(req);
 
   if (writeBuf.size() >= writeBufSize) 
@@ -218,7 +220,7 @@ void PageMapping::write(Request &req, uint64_t &tick) {
     {
       if (i.ioFlag.count() > 0)
       {
-        writeInternal(req, tick);
+        writeInternal(i, tick);
 
         debugprint(LOG_FTL_PAGE_MAPPING,
                "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
@@ -234,7 +236,8 @@ void PageMapping::write(Request &req, uint64_t &tick) {
     writeBuf.clear();
     writeBuf.reserve(writeBufSize);
   }
-  */
+
+#else
   
   if (req.ioFlag.count() > 0) {
     writeInternal(req, tick);
@@ -247,7 +250,8 @@ void PageMapping::write(Request &req, uint64_t &tick) {
   else {
     warn("FTL got empty request");
   }
-  
+
+#endif
   //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
 }
 
@@ -470,15 +474,17 @@ void PageMapping::calculateVictimWeight(
 }
 
 void PageMapping::exchange_seg(uint32_t &dist, uint32_t &src, uint32_t seg_id) {
-  if(src == dist)
+  if (src == dist)
     return;
+
   auto dist_block = blocks.find(dist);
   auto src_block = blocks.find(src);
   uint32_t channel = seg_id * (blk_per_superblk / MGC_segments);
   // pageindex, channel idx
-  for(uint32_t i = 0; i < 8; ++i) 
+
+  for (uint32_t i = 0; i < 8; ++i) 
   {
-    for(uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; ++pageIndex) {
+    for (uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; ++pageIndex) {
       uint32_t idx = channel + i;
       uint64_t dist_lpn = dist_block->second.getppLPN(pageIndex, idx);
       uint64_t src_lpn = src_block->second.getppLPN(pageIndex, idx);
@@ -531,6 +537,9 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     bReclaimMore = false;
   }
 
+  struct timeval start, end;
+  gettimeofday(&start, 0);
+
   // Calculate weights of all blocks
   calculateVictimWeight(weight, policy, tick);
 
@@ -571,8 +580,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   */
 #ifdef segSB
 
-  struct timeval start, end;
-  gettimeofday(&start, 0);
+  
 
   for (int i = 0; i < MGC_segments; ++i)
   {
@@ -582,31 +590,38 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     });
   }
 
+
+  gettimeofday(&end, 0);
+  uint64_t sec = end.tv_sec-start.tv_sec;
+  uint64_t usec = end.tv_usec-start.tv_usec;
+    
+  segSB_time += (sec + (usec / 1000000.0));
+
   vector<uint32_t> paritySBCount(blk_per_superblk, 0);
-  vector<pair<uint32_t, uint32_t>> MGCcandidate;
+  vector<pair<uint32_t, uint32_t>> MGCcandidate(MGC_segments);
   uint32_t parityBlkIdx = 0;
   uint32_t maxCount = 0;
   uint32_t MGCcopydata = 0;
-
+  uint32_t weight_len = weight.size();
   // MLCgetGCvictimGreedy.c:50
   // Greedy select 4 segments
-  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  for (uint32_t i = 0; i < MGC_segments; ++i) 
   {
-    MGCcandidate.emplace_back(segSB_weight[i][0]);
+    MGCcandidate[i] = (segSB_weight[i][0]);
     MGCcopydata += MGCcandidate[i].second;
   }
 
   // MLCgetGCvictimGreedy.c:148
-  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  for (uint32_t i = 0; i < MGC_segments; ++i) 
   {
     paritySBCount[MGCcandidate[i].first % blk_per_superblk]++;
   }
 
   // MLCgetGCvictimGreedy.c:149
   // find the most concentrated parity channel
-  for(uint32_t i = 0; i < blk_per_superblk; ++i) 
+  for (uint32_t i = 0; i < blk_per_superblk; ++i) 
   {
-    if(paritySBCount[i] > maxCount) 
+    if (paritySBCount[i] > maxCount) 
     {
       maxCount = paritySBCount[i];
       parityBlkIdx = i;
@@ -615,17 +630,17 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // MLCgetGCvictimGreedy.c:157 same_chip_parity
   // make sure all candidate have same parity block index (channel)
-  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  for (uint32_t i = 0; i < MGC_segments; ++i) 
   {
 
-    if(MGCcandidate[i].first % blk_per_superblk != parityBlkIdx) 
+    if (MGCcandidate[i].first % blk_per_superblk != parityBlkIdx) 
     {
       uint32_t copydata = param.pagesInBlock * (blk_per_superblk / MGC_segments);
 
-      for(uint32_t j = 1; j < weight.size(); ++j) 
+      for (uint32_t j = 1; j < weight_len; ++j) 
       {
 
-        if(segSB_weight[i][j].first % blk_per_superblk == parityBlkIdx 
+        if (segSB_weight[i][j].first % blk_per_superblk == parityBlkIdx 
           && copydata > segSB_weight[i][j].second) 
         {
           // check copydata calculate
@@ -657,14 +672,14 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   maxCount = 0;
   mostSB = MGCcandidate[0].first;
 
-  for(uint32_t i = 1; i < MGC_segments; ++i) 
+  for (uint32_t i = 1; i < MGC_segments; ++i) 
   {
-    if(MGCcandidate[i].first != MGCcandidate[0].first) 
+    if (MGCcandidate[i].first != MGCcandidate[0].first) 
     {
       sameSBcount[i]++;
-      for(uint32_t j = 0; j < i; ++j) 
+      for (uint32_t j = 0; j < i; ++j) 
       {
-        if(MGCcandidate[i].first == MGCcandidate[j].first) 
+        if (MGCcandidate[i].first == MGCcandidate[j].first) 
         {
           sameSBcount[j]++;
           break;
@@ -675,9 +690,9 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   assert(sameSBcount[0] == 0);
 
   // MLCgetGCvictimGreedy.c:207
-  for(uint32_t i = 0; i < MGC_segments; ++i) 
+  for (uint32_t i = 0; i < MGC_segments; ++i) 
   {
-    if(sameSBcount[i] >= maxCount && MGCcandidate[i] != MGCcandidate[0])
+    if (sameSBcount[i] >= maxCount && MGCcandidate[i].first != MGCcandidate[0].first)
     {
       maxCount = sameSBcount[i];
       mostSB = MGCcandidate[i].first;
@@ -686,17 +701,35 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
 
   // MLCgetGCvictimGreedy.c:215
-  for(uint32_t i = 1; i < MGC_segments; ++i)
+  for (uint32_t i = 1; i < MGC_segments; ++i)
   {
     auto blk0 = blocks.find(MGCcandidate[0].first);
     auto blkSB = blocks.find(mostSB);
     auto blk_i = blocks.find(MGCcandidate[i].first);
+
+#ifdef DEBUG
+
+    if (blk0 == blocks.end()) {
+      cout << "can't find blk0\n";
+    }
+    else if (blkSB == blocks.end()) {
+      cout << "can't find mostSB\n";
+    }
+    else if (blk_i == blocks.end()) {
+      cout << "can't find bli_i\n";
+    }
+
+    cout << "Ith : " << i << '\n';
+    cout << "blk0 :" << MGCcandidate[0].first << ", par : " << MGCcandidate[0].second << '\n';
+    //cout << "blk0 :" << MGCcandidate[0].first << ", par : " << MGCcandidate[0].second << '\n';
+    cout << "blki :" << MGCcandidate[i].first << ", par : " << MGCcandidate[i].second << '\n';
+    
+#endif
     uint32_t seg0_count = blk0->second.getPartialValidPageCount(i);
     uint32_t segSB_count = blkSB->second.getPartialValidPageCount(i);
     uint32_t seg_i_count = blk_i->second.getPartialValidPageCount(i);
-
     //  seg 1 ~ 3 choose less valid page segment between 0 and mostSB
-    if(seg0_count <= segSB_count)
+    if (seg0_count <= segSB_count)
     {
       MGCcopydata = MGCcopydata + seg0_count - seg_i_count;
       MGCcandidate[i].first = MGCcandidate[0].first;
@@ -749,23 +782,24 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   */
   
   // calculate rewrite parity
-  for(uint32_t i = 1; i < MGC_segments; ++i) 
+  for (uint32_t i = 1; i < MGC_segments; ++i) 
   {
     uint32_t j = 0;
-    for(; j < i; ++j) {
-      if(MGCcandidate[i].first == MGCcandidate[j].first)
+    for (; j < i; ++j) 
+    {
+      if (MGCcandidate[i].first == MGCcandidate[j].first)
         break;
     }  
-    if(j == i)
+    if (j == i)
       MGCcopydata += param.pagesInBlock;
   }
 
-  uint32_t threshold = weight[0].second;
+  //uint32_t threshold = weight[0].second;
 
   // Choose between GC and MGC
   uint32_t paritySeg = 0;
 
-  if(MGCcopydata < threshold) 
+  if (0) 
   {
     MGC = 1;
     list.emplace_back(MGCcandidate[0].first);
@@ -776,31 +810,33 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     list.emplace_back(weight[0].first);
   }
 
-  if(MGC) 
+  if (MGC) 
   {
     // exchange segment to MGCcandidate[0]
     // cannot use move assignment (granularity different)
-    for(uint32_t i = 0; i < MGC_segments; ++i) 
+    for (uint32_t i = 0; i < MGC_segments; ++i) 
     {
       exchange_seg(MGCcandidate[paritySeg].first, MGCcandidate[i].first, i);
     }
 
     // rewrite parity
-    if(MGCcandidate[0].first != mostSB) 
+    if (MGCcandidate[0].first != mostSB) 
     {
       // erase parity block
       PAL::Request req(param.ioUnitInPage);
       req.blockIndex = mostSB;
       debugprint(LOG_FTL_PAGE_MAPPING,
                "WRITE SEGMENT PARITY");
-      for(uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; ++pageIndex) 
+      for (uint32_t pageIndex = 0; pageIndex < param.pagesInBlock; ++pageIndex) 
       {
         req.pageIndex = pageIndex;
-        if(bRandomTweak) {
+        if (bRandomTweak) 
+        {
           req.ioFlag.reset();
           req.ioFlag.set(mostSB % 32);
         }
-        else {
+        else 
+        {
           req.ioFlag.set();
         }
         //pPAL->write(req, tick, parity);
@@ -809,11 +845,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     
   }
 
-  gettimeofday(&end, 0);
-  uint64_t sec = end.tv_sec-start.tv_sec;
-  uint64_t usec = end.tv_usec-start.tv_usec;
-    
-  segSB_time += (sec + (usec / 1000000.0));
+  
 
 #else
 
@@ -845,7 +877,8 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   std::vector<vector<pair<PAL::Request, bool>>> transposeBuf;
 
   // init transpose buffer
-  if (MGC) {
+  if (MGC) 
+  {
     transposeBuf.clear();
     for (uint32_t i = 0; i < param.pagesInBlock; ++i) 
     {
@@ -1070,12 +1103,12 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   std::unordered_map<uint32_t, Block>::iterator block;
   //static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
 
-  // GcThreshold
+  // GcThreshold nFreeBlocks <= 245
   if (nFreeBlocks <= 245) {
     // get how much empty SB per GC
-    while(nFreeBlocks <= 250) {
+    while (nFreeBlocks <= 250) {
       if (!sendToPAL) {
-      panic("ftl: GC triggered while in initialization");
+        panic("ftl: GC triggered while in initialization");
       }
 
       std::vector<uint32_t> list;
@@ -1098,6 +1131,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
       stat.gcCount++;
       stat.reclaimedBlocks += list.size();
     }
+    printf("sort time : %lf\n", segSB_time);
   }
   
   auto mappingList = table.find(req.lpn);
