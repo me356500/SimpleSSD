@@ -440,6 +440,7 @@ void PageMapping::calculateVictimWeight(
     case POLICY_RANDOM:
     case POLICY_DCHOICE:
       for (auto &iter : blocks) {
+
         if (iter.second.getNextWritePageIndex() != param.pagesInBlock) {
           continue;
         }
