@@ -196,6 +196,8 @@ GenericCache::GenericCache(ConfigReader &c, FTL::FTL *f, DRAM::AbstractDRAM *d)
   }
 
   memset(&stat, 0, sizeof(stat));
+
+  write_byte = 0;
 }
 
 GenericCache::~GenericCache() {
@@ -552,6 +554,17 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
   debugprint(LOG_ICL_GENERIC_CACHE,
              "WRITE | REQ %7u-%-4u | LCA %" PRIu64 " | SIZE %" PRIu64,
              req.reqID, req.reqSubID, req.range.slpn, req.length);
+
+  /*
+    page : 16384
+    write 31 pages ---> 1 parity pages
+  */
+  write_byte += req.length;
+  while (write_byte >= 507904) {
+    write_byte -= 507904;
+    req.length += 16384;
+  }
+
 
   FTL::Request reqInternal(lineCountInSuperPage, req);
 

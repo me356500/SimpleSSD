@@ -810,7 +810,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
         {
           req.ioFlag.set();
         }
-        pPAL->parity_write();
+        //pPAL->parity_write();
       }
     }
     
@@ -943,6 +943,42 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
           }
         }
 
+
+        // parity padding
+        parity_cnt++;
+
+        if (parity_cnt % 31 == 0) {
+          // write anywhere
+          parity_cnt = 0;
+          freeBlock = blocks.find(getLastFreeBlock(bit));
+          newBlockIdx = freeBlock->first;
+
+          for (uint32_t idx = 0; idx < bitsetSize; idx++) {
+            if (bit.test(idx)) {
+              
+
+              uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(idx);
+
+              freeBlock->second.write(newPageIdx, lpns.at(idx), idx, beginAt);
+
+              // Issue Write
+              req.blockIndex = newBlockIdx;
+              req.pageIndex = newPageIdx;
+
+              if (bRandomTweak) {
+                req.ioFlag.reset();
+                req.ioFlag.set(idx);
+              }
+              else {
+                req.ioFlag.set();
+              }
+
+              writeRequests.push_back(req);
+            
+              stat.validPageCopies++;
+            }
+          }
+        }
         stat.validSuperPageCopies++;
       }
     }
@@ -998,6 +1034,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     pPAL->write(iter, beginAt);
     // write parity
+    /*
     pPAL->parity_write();
 
     parity_cnt++;
@@ -1005,6 +1042,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
       pPAL->parity_write();
       parity_cnt = 0;
     }
+    */
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
@@ -1210,12 +1248,14 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         
         pPAL->write(palRequest, beginAt);
         // write parity
+        /*
         pPAL->parity_write();
         parity_cnt++;
         if (parity_cnt % 31 == 0) {
           pPAL->parity_write();
           parity_cnt = 0;
         }
+        */
       }
 
       finishedAt = MAX(finishedAt, beginAt);

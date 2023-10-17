@@ -49,6 +49,8 @@ class GenericCache : public AbstractCache {
 
   bool bSuperPage;
 
+  uint64_t write_byte;
+
   struct SequentialDetect {
     bool enabled;
     Request lastRequest;
