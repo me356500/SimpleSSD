@@ -64,6 +64,7 @@ class PageMapping : public AbstractFTL {
   std::vector<Request> writeBuf;
   double segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
+  uint64_t parity_cnt;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;

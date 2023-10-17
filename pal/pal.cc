@@ -117,6 +117,10 @@ PAL::~PAL() {
   delete pPAL;
 }
 
+void PAL::parity_write() {
+  pPAL->parity_write();
+}
+
 void PAL::read(Request &req, uint64_t &tick) {
   pPAL->read(req, tick);
 }

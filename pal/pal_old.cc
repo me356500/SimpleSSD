@@ -114,6 +114,11 @@ void PALOLD::read(Request &req, uint64_t &tick) {
   tick = finishedAt;
 }
 
+void PALOLD::parity_write() {
+  stat.writeCount++;
+  return;
+}
+
 void PALOLD::write(Request &req, uint64_t &tick) {
   uint64_t finishedAt = tick;
   ::Command cmd(tick, 0, OPER_WRITE, param.superPageSize);

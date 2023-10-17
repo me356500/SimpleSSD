@@ -57,6 +57,7 @@ class PAL : public StatObject {
   void write(Request &, uint64_t &);
   void erase(Request &, uint64_t &);
   void copyback(uint32_t, uint32_t, uint32_t, uint64_t &);
+  void parity_write();
 
   Parameter *getInfo();
 

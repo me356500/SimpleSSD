@@ -555,15 +555,15 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
 
   FTL::Request reqInternal(lineCountInSuperPage, req);
 
-  dirty = true;
-  /*
+
+  
   if (req.length < lineSize) {
     dirty = true;
   }
   else {
     pFTL->write(reqInternal, flash);
   }
-  */
+  
   if (useWriteCaching) {
     uint32_t setIdx = calcSetIndex(req.range.slpn);
     uint32_t wayIdx;

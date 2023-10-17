@@ -62,6 +62,7 @@ class PALOLD : public AbstractPAL {
   void read(Request &, uint64_t &) override;
   void write(Request &, uint64_t &) override;
   void erase(Request &, uint64_t &) override;
+  void parity_write() override;
 
   void getStatList(std::vector<Stats> &, std::string) override;
   void getStatValues(std::vector<double> &) override;
