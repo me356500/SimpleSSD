@@ -44,6 +44,7 @@ class ICL : public StatObject {
   ICL(ConfigReader &);
   ~ICL();
 
+  void convertReq(Request &);
   void read(Request &, uint64_t &);
   void write(Request &, uint64_t &);
 

@@ -65,6 +65,7 @@ class PageMapping : public AbstractFTL {
   double segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   uint64_t parity_cnt;
+  uint64_t cur_tick;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;
@@ -81,6 +82,8 @@ class PageMapping : public AbstractFTL {
   void exchange_seg(uint32_t &, uint32_t &, uint32_t );
   void selectVictimBlock(std::vector<uint32_t> &, uint64_t &, uint32_t &);
   void doGarbageCollection(std::vector<uint32_t> &, uint64_t &, uint32_t &);
+
+  void write_parity(uint32_t &, uint64_t &, uint32_t &);
 
   float calculateWearLeveling();
   void calculateTotalPages(uint64_t &, uint64_t &);

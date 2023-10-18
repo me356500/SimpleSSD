@@ -171,6 +171,7 @@ bool PageMapping::initialize() {
   segSB_time = 0;
   segSB_weight.clear();
   parity_cnt = 0;
+  cur_tick = 0;
   // Report
   calculateTotalPages(valid, invalid);
   debugprint(LOG_FTL_PAGE_MAPPING, "Filling finished. Page status:");
@@ -207,9 +208,36 @@ void PageMapping::read(Request &req, uint64_t &tick) {
   //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::READ);
 }
 
+void PageMapping::write_parity(uint32_t &block_idx, uint64_t &tick, uint32_t &page) {
+  auto block = blocks.find(block_idx);
+
+  uint32_t parity_io = block->second.getparityChannelIndex();
+  Bitset req_io(32);
+  req_io.reset();
+  req_io.set(parity_io);
+  PAL::Request parity_req(param.ioUnitInPage);
+  parity_req.ioFlag = req_io;
+  parity_req.blockIndex = block->first;
+
+
+  for (uint32_t pageIndex = (page == 256 ? 0 : page); pageIndex < (page == 256 ? page : page + 1); pageIndex++) {
+    // FTL write
+    block->second.write(pageIndex, 0, parity_io, tick);
+
+    // Invalidate
+    block->second.invalidate(pageIndex, parity_io);
+
+    // PAL write
+    parity_req.pageIndex = pageIndex;
+    pPAL->write(parity_req, tick);
+  }
+  
+}
+
 void PageMapping::write(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
 
+  // reqsize is a page (16384) byte after enable I/O random tweak
 #ifdef writebuffer
 
   writeBuf.emplace_back(req);
@@ -403,6 +431,34 @@ uint32_t PageMapping::getLastFreeBlock(Bitset &iomap) {
   if (freeBlock == blocks.end()) {
     panic("Corrupted");
   }
+
+#ifdef parity_rotate
+  // If current free block parity index matches iomap
+  uint32_t parity_idx = freeBlock->second.getparityChannelIndex();
+  Bitset iomask(32);
+  iomask.reset();
+  iomask.set(parity_idx);
+
+  // parity channel conflict
+  while (parity_cnt && (iomask & iomap).any()) {
+
+    lastFreeBlockIOMap = iomap;
+
+    lastFreeBlockIndex++;
+
+    if (lastFreeBlockIndex == param.pageCountToMaxPerf) {
+      lastFreeBlockIndex = 0;
+    }
+
+    freeBlock = blocks.find(lastFreeBlock.at(lastFreeBlockIndex));
+
+    parity_idx = freeBlock->second.getparityChannelIndex();
+
+    iomask.reset();
+    iomask.set(parity_idx);
+
+  }
+#endif
 
   // If current free block is full, get next block
   if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
@@ -945,9 +1001,9 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
 
         // parity padding
-        parity_cnt++;
-
-        if (parity_cnt % 31 == 0) {
+        //parity_cnt++;
+        /*
+        if (parity_cnt && parity_cnt % 31 == 0) {
           // write anywhere
           parity_cnt = 0;
           freeBlock = blocks.find(getLastFreeBlock(bit));
@@ -979,6 +1035,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
             }
           }
         }
+        */
         stat.validSuperPageCopies++;
       }
     }
@@ -1034,15 +1091,15 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     pPAL->write(iter, beginAt);
     // write parity
-    /*
-    pPAL->parity_write();
-
+    
+    //pPAL->parity_write();
+    
     parity_cnt++;
-    if (parity_cnt % 31 == 0) {
+    while (parity_cnt > 0 && parity_cnt % 31 == 0) {
       pPAL->parity_write();
-      parity_cnt = 0;
+      parity_cnt -= 31;
     }
-    */
+    
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
@@ -1248,14 +1305,13 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         
         pPAL->write(palRequest, beginAt);
         // write parity
-        /*
-        pPAL->parity_write();
+        
         parity_cnt++;
-        if (parity_cnt % 31 == 0) {
+        while (parity_cnt > 0 && parity_cnt % 31 == 0) {
           pPAL->parity_write();
-          parity_cnt = 0;
+          parity_cnt -= 31;
         }
-        */
+        
       }
 
       finishedAt = MAX(finishedAt, beginAt);
