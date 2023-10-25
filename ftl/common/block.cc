@@ -63,6 +63,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   pNextWritePageIndex_Horizontal = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
   erase();
   eraseCount = 0;
+  write_channel_idx = 0;
 }
 
 Block::Block(const Block &old)
@@ -88,6 +89,7 @@ Block::Block(const Block &old)
   memcpy(pNextWritePageIndex_Horizontal, old.pNextWritePageIndex_Horizontal,
          ioUnitInPage * sizeof(uint32_t));
   eraseCount = old.eraseCount;
+  write_channel_idx = old.write_channel_idx;
 }
 
 Block::Block(Block &&old) noexcept
@@ -103,7 +105,8 @@ Block::Block(Block &&old) noexcept
       erasedBits(std::move(old.erasedBits)),
       ppLPNs(std::move(old.ppLPNs)),
       lastAccessed(std::move(old.lastAccessed)),
-      eraseCount(std::move(old.eraseCount)) {
+      eraseCount(std::move(old.eraseCount)),
+      write_channel_idx(std::move(old.write_channel_idx)) {
   // TODO Use std::exchange to set old value to null (C++14)
   old.idx = 0;
   old.pageCount = 0;
@@ -116,6 +119,7 @@ Block::Block(Block &&old) noexcept
   old.ppLPNs = nullptr;
   old.lastAccessed = 0;
   old.eraseCount = 0;
+  old.write_channel_idx = 0;
 }
 
 Block::~Block() {
@@ -168,6 +172,7 @@ Block &Block::operator=(Block &&rhs) {
     ppLPNs = std::move(rhs.ppLPNs);
     lastAccessed = std::move(rhs.lastAccessed);
     eraseCount = std::move(rhs.eraseCount);
+    write_channel_idx = std::move(rhs.write_channel_idx);
 
     rhs.pNextWritePageIndex = nullptr;
     rhs.pNextWritePageIndex_Horizontal = nullptr;
@@ -177,6 +182,7 @@ Block &Block::operator=(Block &&rhs) {
     rhs.ppLPNs = nullptr;
     rhs.lastAccessed = 0;
     rhs.eraseCount = 0;
+    rhs.write_channel_idx = 0;
   }
 
   return *this;
@@ -340,8 +346,12 @@ bool Block::getPageInfo(uint32_t pageIndex, std::vector<uint64_t> &lpn,
   }
   else if (map.size() == ioUnitInPage) {
     map = validBits.at(pageIndex);
-    lpn = std::vector<uint64_t>(ppLPNs[pageIndex],
-                                ppLPNs[pageIndex] + ioUnitInPage);
+    lpn = std::vector<uint64_t>(32);
+    for (uint32_t idx = 0; idx < 32; ++idx) {
+      lpn[idx] = ppLPNs[pageIndex][idx];
+    }
+    //lpn = std::vector<uint64_t>(ppLPNs[pageIndex],
+    //                            ppLPNs[pageIndex] + ioUnitInPage);
   }
   else {
     panic("I/O map size mismatch");
@@ -467,6 +477,11 @@ void Block::setErasedBits(uint32_t pageIndex, uint32_t idx, bool value) {
 
 void Block::setppLPN(uint32_t pageIndex, uint32_t idx, uint64_t lpn) {
   ppLPNs[pageIndex][idx] = lpn;
+}
+
+uint32_t Block::getNextWriteChannelIndex() {
+  write_channel_idx %= 32;
+  return write_channel_idx++;
 }
 
 }  // namespace FTL

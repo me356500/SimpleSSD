@@ -35,7 +35,6 @@
 #define blk_per_superblk 32
 #define GCbufSize 7936
 #define writeBufSize 7936
-#define segSB
 
 namespace SimpleSSD {
 
@@ -66,6 +65,10 @@ class PageMapping : public AbstractFTL {
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   uint64_t parity_cnt;
   uint64_t cur_tick;
+  uint64_t GCcopypage;
+
+  std::unordered_map<uint64_t, uint32_t> lpn_channel;
+  uint32_t spareblk_idx;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;

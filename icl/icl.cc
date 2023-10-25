@@ -63,31 +63,12 @@ ICL::~ICL() {
   delete pDRAM;
 }
 
-void ICL::convertReq(Request &req) {
-  uint64_t len = req.length;
-  uint64_t offset = req.offset;
-
-  offset = offset / 32;
-
-  if (len % 32 != 0) {
-    len = 1 + len / 32;
-  }
-  else {
-    len = len / 32;
-  }
-
-  req.length = len * 32;
-  req.offset = offset * 32;
-
-}
-
 void ICL::read(Request &req, uint64_t &tick) {
   uint64_t beginAt;
   uint64_t finishedAt = tick;
   uint64_t reqRemain = req.length;
   Request reqInternal;
 
-  convertReq(req);
 
   reqInternal.reqID = req.reqID;
   reqInternal.offset = req.offset;
@@ -124,7 +105,6 @@ void ICL::write(Request &req, uint64_t &tick) {
   // ioflag 32
   // ioFlag.set(r.range.slpn % iocount);
   // lpn = slpn / iocount
-  convertReq(req);
 
   reqInternal.reqID = req.reqID;
   reqInternal.offset = req.offset;

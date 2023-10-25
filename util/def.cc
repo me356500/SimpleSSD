@@ -74,7 +74,8 @@ Request::_Request(uint32_t iocount)
 Request::_Request(uint32_t iocount, ICL::Request &r)
     : reqID(r.reqID),
       reqSubID(r.reqSubID),
-      lpn(r.range.slpn / iocount),
+      // r.range.slpn / iocount
+      lpn(r.range.slpn),
       ioFlag(iocount) {
   ioFlag.set(r.range.slpn % iocount);
 }

@@ -39,7 +39,7 @@ PageMapping::PageMapping(ConfigReader &c, Parameter &p, PAL::PAL *l,
       lastFreeBlockIOMap(param.ioUnitInPage),
       bReclaimMore(false) {
   blocks.reserve(param.totalPhysicalBlocks);
-  table.reserve(param.totalLogicalBlocks * param.pagesInBlock);
+  table.reserve(param.totalLogicalBlocks * param.pagesInBlock * 32);
 
   for (uint32_t i = 0; i < param.totalPhysicalBlocks; i++) {
     freeBlocks.emplace_back(Block(i, param.pagesInBlock, param.ioUnitInPage));
@@ -172,6 +172,11 @@ bool PageMapping::initialize() {
   segSB_weight.clear();
   parity_cnt = 0;
   cur_tick = 0;
+  GCcopypage = 0;
+  lpn_channel.clear();
+  lpn_channel.reserve(param.totalLogicalBlocks * param.pagesInBlock * 32);
+  spareblk_idx = 9999999;
+
   // Report
   calculateTotalPages(valid, invalid);
   debugprint(LOG_FTL_PAGE_MAPPING, "Filling finished. Page status:");
@@ -192,6 +197,10 @@ bool PageMapping::initialize() {
 
 void PageMapping::read(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
+
+  req.ioFlag.reset();
+  uint32_t req_channel = lpn_channel[req.lpn];
+  req.ioFlag.set(req_channel);
 
   if (req.ioFlag.count() > 0) {
     readInternal(req, tick);
@@ -380,9 +389,10 @@ uint32_t PageMapping::getFreeBlock(uint32_t idx) {
     for (; iter != freeBlocks.end(); iter++) {
       blockIndex = iter->getBlockIndex();
 
-      if (blockIndex % param.pageCountToMaxPerf == idx) {
-        break;
-      }
+      break;
+      //if (blockIndex % param.pageCountToMaxPerf == idx) {
+      //  break;
+      //}
     }
 
     // Sanity check
@@ -594,8 +604,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     bReclaimMore = false;
   }
 
-  struct timeval start, end, elapsed;
-  gettimeofday(&start, NULL);
+  //struct timeval start, end, elapsed;
+  //gettimeofday(&start, NULL);
 
   // Calculate weights of all blocks
   calculateVictimWeight(weight, policy, tick);
@@ -875,8 +885,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   
 
 #else
-
-  for (uint64_t i = 0; i < nBlocks; i++) {
+  MGC = 0;
+  for (uint64_t i = 0; i < 1; i++) {
     list.push_back(weight.at(i).first);
   }
 
@@ -901,6 +911,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     return;
   }
 
+#ifdef segSB
   std::vector<vector<pair<PAL::Request, bool>>> transposeBuf;
 
   // init transpose buffer
@@ -918,9 +929,13 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     }
   } 
 
+#endif
+
   // For all blocks to reclaim, collecting request structure only
   for (auto &iter : blocksToReclaim) {
     auto block = blocks.find(iter);
+
+    //GCcopypage += block->second.getValidPageCountRaw();
 
     if (block == blocks.end()) {
       panic("Invalid block");
@@ -935,7 +950,12 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
         }
 
         // Retrive free block
-        auto freeBlock = blocks.find(getLastFreeBlock(bit));
+        auto freeBlock = blocks.find(spareblk_idx);
+
+        if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
+          spareblk_idx = getFreeBlock(0);
+          freeBlock = blocks.find(spareblk_idx);
+        }
 
         // Issue Read
         req.blockIndex = block->first;
@@ -960,14 +980,25 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
             pDRAM->read(&(*mappingList), 8 * param.ioUnitInPage, tick);
 
-            auto &mapping = mappingList->second.at(idx);
 
-            uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(idx);
+            // copying
+            if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
+              spareblk_idx = getFreeBlock(0);
+              freeBlock = blocks.find(spareblk_idx);
+            }
+
+            newBlockIdx = freeBlock->first;
+            uint32_t write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+
+            auto &mapping = mappingList->second.at(write_channel_idx);
+
+            uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(write_channel_idx);
+            lpn_channel[lpns.at(write_channel_idx)] = write_channel_idx;
 
             mapping.first = newBlockIdx;
             mapping.second = newPageIdx;
 
-            freeBlock->second.write(newPageIdx, lpns.at(idx), idx, beginAt);
+            freeBlock->second.write(newPageIdx, lpns.at(idx), write_channel_idx, beginAt);
 
             // Issue Write
             req.blockIndex = newBlockIdx;
@@ -975,7 +1006,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
             if (bRandomTweak) {
               req.ioFlag.reset();
-              req.ioFlag.set(idx);
+              req.ioFlag.set(write_channel_idx);
             }
             else {
               req.ioFlag.set();
@@ -984,10 +1015,12 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
             // MGC copy to transpose buffer
             if (MGC)
             {
+#ifdef segSB
               transposeBuf.at(newPageIdx).at(idx).first.blockIndex = newBlockIdx;
               transposeBuf.at(newPageIdx).at(idx).first.pageIndex = newPageIdx;
-              transposeBuf.at(newPageIdx).at(idx).first.ioFlag.set();
+              transposeBuf.at(newPageIdx).at(idx).first.ioFlag.set(write_channel_idx);
               transposeBuf.at(newPageIdx).at(idx).second = 1;
+#endif
             }
             else
             {
@@ -1049,6 +1082,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   }
 
   // write transpose buffer to GC buffer
+#ifdef segSB
   if (MGC)
   {
     uint32_t segments = MGC_segments;
@@ -1076,6 +1110,7 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     }
   }
 
+#endif
   // Do actual I/O here
   // This handles PAL2 limitation (SIGSEGV, infinite loop, or so-on)
   for (auto &iter : readRequests) {
@@ -1173,9 +1208,11 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   PAL::Request palRequest(req);
   std::unordered_map<uint32_t, Block>::iterator block;
   //static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
-
+  GCcopypage++;
   // GcThreshold nFreeBlocks <= 245
   if (nFreeBlocks <= 245) {
+    printf("First time trigger GC, current user page write %ld\n", GCcopypage);
+    fgetc(stdin);
     // get how much empty SB per GC
     while (nFreeBlocks <= 250) {
       if (!sendToPAL) {
@@ -1202,6 +1239,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
       stat.gcCount++;
       stat.reclaimedBlocks += list.size();
     }
+    //printf("GC copy pages : %ld\n", GCcopypage);
     //printf("sort time : %lf\n", segSB_time);
   }
   
@@ -1211,20 +1249,19 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   bool readBeforeWrite = false;
 
   if (mappingList != table.end()) {
-    for (uint32_t idx = 0; idx < bitsetSize; idx++) {
-      if (req.ioFlag.test(idx) || !bRandomTweak) {
-        auto &mapping = mappingList->second.at(idx);
+    uint32_t invaild_idx = lpn_channel[req.lpn];
 
-        if (mapping.first < param.totalPhysicalBlocks &&
-            mapping.second < param.pagesInBlock) {
-          block = blocks.find(mapping.first);
+    auto &mapping = mappingList->second.at(invaild_idx);
 
-          // Invalidate current page
-          block->second.invalidate(mapping.second, idx);
+    if (mapping.first < param.totalPhysicalBlocks &&
+        mapping.second < param.pagesInBlock) {
+      block = blocks.find(mapping.first);
 
-        }
-      }
+      // Invalidate current page
+      block->second.invalidate(mapping.second, invaild_idx);
+
     }
+    
   }
   else {
     // Create empty mapping
@@ -1240,8 +1277,25 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
     mappingList = ret.first;
   }
 
-  // Write data to free block
-  block = blocks.find(getLastFreeBlock(req.ioFlag));
+  if (spareblk_idx == 9999999)
+    spareblk_idx = getFreeBlock(0);
+
+  block = blocks.find(spareblk_idx);
+  if (block->second.getNextWritePageIndex() == param.pagesInBlock) {
+    spareblk_idx = getFreeBlock(0);
+    block = blocks.find(spareblk_idx);
+  }
+
+  uint32_t write_channel_idx = block->second.getNextWriteChannelIndex();
+
+  if (block->first % 1000 == 0) {
+    cout << "Block idx : " << block->first << ", Page idx : " << block->second.getNextWritePageIndex(write_channel_idx);
+    cout << ", Channel idx : " << write_channel_idx << ", LPN : " << req.lpn << "\n";
+  }
+
+  req.ioFlag.reset();
+  req.ioFlag.set(write_channel_idx);
+  lpn_channel[req.lpn] = write_channel_idx;
 
   if (block == blocks.end()) {
     panic("No such block");

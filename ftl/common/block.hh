@@ -51,6 +51,7 @@ class Block {
   uint64_t lastAccessed;
   uint32_t eraseCount; //ECs
 
+  uint32_t write_channel_idx;
  public:
   Block(uint32_t, uint32_t, uint32_t);
   Block(const Block &);      // Copy constructor
@@ -78,6 +79,9 @@ class Block {
   uint64_t  getppLPN(uint32_t, uint32_t);
   uint32_t getNextWritePageIndex(uint32_t);
   uint32_t getNextWritePageIndex_Horizontal(uint32_t);
+
+  uint32_t getNextWriteChannelIndex();
+
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
   bool read(uint32_t, uint32_t, uint64_t);
   bool write(uint32_t, uint64_t, uint32_t, uint64_t);
