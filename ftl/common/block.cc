@@ -60,7 +60,6 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
 
   // C-style allocation
   pNextWritePageIndex = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
-  pNextWritePageIndex_Horizontal = (uint32_t *)calloc(ioUnitInPage, sizeof(uint32_t));
   erase();
   eraseCount = 0;
   write_channel_idx = 0;
@@ -85,9 +84,7 @@ Block::Block(const Block &old)
 
   memcpy(pNextWritePageIndex, old.pNextWritePageIndex,
          ioUnitInPage * sizeof(uint32_t));
-
-  memcpy(pNextWritePageIndex_Horizontal, old.pNextWritePageIndex_Horizontal,
-         ioUnitInPage * sizeof(uint32_t));
+         
   eraseCount = old.eraseCount;
   write_channel_idx = old.write_channel_idx;
 }
@@ -97,7 +94,6 @@ Block::Block(Block &&old) noexcept
       pageCount(std::move(old.pageCount)),
       ioUnitInPage(std::move(old.ioUnitInPage)),
       pNextWritePageIndex(std::move(old.pNextWritePageIndex)),
-      pNextWritePageIndex_Horizontal(std::move(old.pNextWritePageIndex_Horizontal)),
       pValidBits(std::move(old.pValidBits)),
       pErasedBits(std::move(old.pErasedBits)),
       pLPNs(std::move(old.pLPNs)),
@@ -112,7 +108,6 @@ Block::Block(Block &&old) noexcept
   old.pageCount = 0;
   old.ioUnitInPage = 0;
   old.pNextWritePageIndex = nullptr;
-  old.pNextWritePageIndex_Horizontal = nullptr;
   old.pValidBits = nullptr;
   old.pErasedBits = nullptr;
   old.pLPNs = nullptr;
@@ -124,7 +119,6 @@ Block::Block(Block &&old) noexcept
 
 Block::~Block() {
   free(pNextWritePageIndex);
-  free(pNextWritePageIndex_Horizontal);
   free(pLPNs);
 
   delete pValidBits;
@@ -139,7 +133,6 @@ Block::~Block() {
   }
 
   pNextWritePageIndex = nullptr;
-  pNextWritePageIndex_Horizontal = nullptr;
   pLPNs = nullptr;
   pValidBits = nullptr;
   pErasedBits = nullptr;
@@ -163,7 +156,6 @@ Block &Block::operator=(Block &&rhs) {
     pageCount = std::move(rhs.pageCount);
     ioUnitInPage = std::move(rhs.ioUnitInPage);
     pNextWritePageIndex = std::move(rhs.pNextWritePageIndex);
-    pNextWritePageIndex_Horizontal = std::move(rhs.pNextWritePageIndex_Horizontal);
     pValidBits = std::move(rhs.pValidBits);
     pErasedBits = std::move(rhs.pErasedBits);
     pLPNs = std::move(rhs.pLPNs);
@@ -175,7 +167,6 @@ Block &Block::operator=(Block &&rhs) {
     write_channel_idx = std::move(rhs.write_channel_idx);
 
     rhs.pNextWritePageIndex = nullptr;
-    rhs.pNextWritePageIndex_Horizontal = nullptr;
     rhs.pValidBits = nullptr;
     rhs.pErasedBits = nullptr;
     rhs.pLPNs = nullptr;
@@ -192,7 +183,7 @@ uint32_t Block::getBlockIndex() const {
   return idx;
 }
 
-uint32_t Block::getparityChannelIndex() const {
+uint32_t Block::getParityChannelIndex() const {
   return idx % 32;
 }
 
@@ -320,24 +311,11 @@ uint32_t Block::getNextWritePageIndex() {
 
   return idx;
 }
-uint32_t Block::getNextWritePageIndex_Horizontal() {
-  uint32_t idx = 0;
-
-  for (uint32_t i = 0; i < ioUnitInPage; i++) {
-    if (idx < pNextWritePageIndex_Horizontal[i]) {
-      idx = pNextWritePageIndex_Horizontal[i];
-    }
-  }
-
-  return idx;
-}
 
 uint32_t Block::getNextWritePageIndex(uint32_t idx) {
   return pNextWritePageIndex[idx];
 }
-uint32_t Block::getNextWritePageIndex_Horizontal(uint32_t idx) {
-  return pNextWritePageIndex_Horizontal[idx];
-}
+
 bool Block::getPageInfo(uint32_t pageIndex, std::vector<uint64_t> &lpn,
                         Bitset &map) {
   if (ioUnitInPage == 1 && map.size() == 1) {

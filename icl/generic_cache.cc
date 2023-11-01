@@ -197,7 +197,6 @@ GenericCache::GenericCache(ConfigReader &c, FTL::FTL *f, DRAM::AbstractDRAM *d)
 
   memset(&stat, 0, sizeof(stat));
 
-  write_byte = 0;
 }
 
 GenericCache::~GenericCache() {

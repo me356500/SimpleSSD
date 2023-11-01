@@ -36,7 +36,7 @@ class Block {
   uint32_t pageCount;
   uint32_t ioUnitInPage;
   uint32_t *pNextWritePageIndex;
-  uint32_t *pNextWritePageIndex_Horizontal;
+
   // Following variables are used when ioUnitInPage == 1
   Bitset *pValidBits;
   Bitset *pErasedBits;
@@ -62,7 +62,7 @@ class Block {
   Block &operator=(Block &&);       // Move assignment
 
   uint32_t getBlockIndex() const;
-  uint32_t getparityChannelIndex() const;
+  uint32_t getParityChannelIndex() const;
   uint64_t getLastAccessedTime();
   uint32_t getEraseCount();
   uint32_t getPartialValidPageCount(uint32_t);
@@ -72,13 +72,11 @@ class Block {
   uint32_t getValidPageCountRaw();
   uint32_t getDirtyPageCount();
   uint32_t getNextWritePageIndex();
-  uint32_t getNextWritePageIndex_Horizontal();
   uint64_t  *getpLPN();
   bool getValidBits(uint32_t, uint32_t);
   bool getErasedBits(uint32_t, uint32_t);
   uint64_t  getppLPN(uint32_t, uint32_t);
   uint32_t getNextWritePageIndex(uint32_t);
-  uint32_t getNextWritePageIndex_Horizontal(uint32_t);
 
   uint32_t getNextWriteChannelIndex();
 

@@ -35,6 +35,8 @@
 #define blk_per_superblk 32
 #define GCbufSize 7936
 #define writeBufSize 7936
+#define writebuffer
+//#define GCbuffer
 
 namespace SimpleSSD {
 
@@ -46,7 +48,9 @@ class PageMapping : public AbstractFTL {
 
   ConfigReader &conf;
 
-  std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>>
+  //std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>>
+  //    table;
+  std::unordered_map<uint64_t, std::pair<uint32_t, uint32_t>>
       table;
   std::unordered_map<uint32_t, Block> blocks;
   std::list<Block> freeBlocks;
@@ -59,15 +63,18 @@ class PageMapping : public AbstractFTL {
   bool bRandomTweak;
   uint32_t bitsetSize;
 
-  std::vector<PAL::Request> GCbuf;
+  std::vector<Request> writeBufVertical;
+  std::vector<Request> GCbuf;
+  //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
   double segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   uint64_t parity_cnt;
   uint64_t cur_tick;
   uint64_t GCcopypage;
-
-  std::unordered_map<uint64_t, uint32_t> lpn_channel;
+  uint32_t warmup;
+  //std::unordered_map<uint64_t, uint32_t> lpn_channel;
+  vector<uint32_t> lpn_channel;
   uint32_t spareblk_idx;
   struct {
     uint64_t gcCount;

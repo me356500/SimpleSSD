@@ -107,10 +107,25 @@ bool PageMapping::initialize() {
 
   req.ioFlag.set();
 
+  lpn_channel.clear();
+  warmup = 1;
+  lpn_channel.resize(68000000);
+  GCbuf.clear();
+  writeBuf.clear();
+  //writeBuf.reserve(writeBufSize);
+  segSB_time = 0;
+  segSB_weight.clear();
+  parity_cnt = 0;
+  cur_tick = 0;
+  GCcopypage = 0;
+  //lpn_channel = vector<uint32_t>(67000000, 0);
+  //lpn_channel.reserve(param.totalLogicalBlocks * param.pagesInBlock * 32);
+  spareblk_idx = 9999999;
+
   // Step 1. Filling
   if (mode == FILLING_MODE_0 || mode == FILLING_MODE_1) {
     // Sequential
-    for (uint64_t i = 0; i < nPagesToWarmup; i++) {
+    for (uint64_t i = 1; i <= 61757952; i++) {
       tick = 0;
       req.lpn = i;
       writeInternal(req, tick, false);
@@ -165,17 +180,7 @@ bool PageMapping::initialize() {
     }
   }
 
-  GCbuf.clear();
-  writeBuf.clear();
-  writeBuf.reserve(writeBufSize);
-  segSB_time = 0;
-  segSB_weight.clear();
-  parity_cnt = 0;
-  cur_tick = 0;
-  GCcopypage = 0;
-  lpn_channel.clear();
-  lpn_channel.reserve(param.totalLogicalBlocks * param.pagesInBlock * 32);
-  spareblk_idx = 9999999;
+  warmup = 0;
 
   // Report
   calculateTotalPages(valid, invalid);
@@ -199,8 +204,7 @@ void PageMapping::read(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
 
   req.ioFlag.reset();
-  uint32_t req_channel = lpn_channel[req.lpn];
-  req.ioFlag.set(req_channel);
+  req.ioFlag.set(lpn_channel[req.lpn]);
 
   if (req.ioFlag.count() > 0) {
     readInternal(req, tick);
@@ -220,7 +224,7 @@ void PageMapping::read(Request &req, uint64_t &tick) {
 void PageMapping::write_parity(uint32_t &block_idx, uint64_t &tick, uint32_t &page) {
   auto block = blocks.find(block_idx);
 
-  uint32_t parity_io = block->second.getparityChannelIndex();
+  uint32_t parity_io = block->second.getParityChannelIndex();
   Bitset req_io(32);
   req_io.reset();
   req_io.set(parity_io);
@@ -245,37 +249,68 @@ void PageMapping::write_parity(uint32_t &block_idx, uint64_t &tick, uint32_t &pa
 
 void PageMapping::write(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
+  uint32_t SBtype = 0;
+#ifndef vertical
+  //SBtype = 0;
+#endif
 
-  // reqsize is a page (16384) byte after enable I/O random tweak
 #ifdef writebuffer
+  if (warmup) {
+    if (req.ioFlag.count() > 0) {
+      writeInternal(req, tick);
 
-  writeBuf.emplace_back(req);
+      debugprint(LOG_FTL_PAGE_MAPPING,
+                "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
+                ")",
+                req.lpn, begin, tick, tick - begin);
+    }
+    else {
+      warn("FTL got empty request");
+    }
+  }
+  else if (SBtype == 0) {
+    writeBuf.emplace_back(req);
+    if (writeBuf.size() == writeBufSize) { // 8192 * 31 / 32 = 7936
+      for (auto &i : writeBuf) {
+        if (i.ioFlag.count() > 0) {
+          writeInternal(i, tick, 1);
 
-  if (writeBuf.size() >= writeBufSize) 
-  {
-    for (auto &i : writeBuf) 
-    {
-      if (i.ioFlag.count() > 0)
-      {
-        writeInternal(i, tick);
-
-        debugprint(LOG_FTL_PAGE_MAPPING,
-               "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
-               ")",
-               req.lpn, begin, tick, tick - begin);
+          debugprint(LOG_FTL_PAGE_MAPPING,
+                    "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
+                    ")",
+                    req.lpn, begin, tick, tick - begin);
+        }
+        else {
+          warn("FTL got empty request");
+        }
       }
-      else
-      {
-        warn("FTL got empty request");
-      }
+      writeBuf.clear();
+      writeBuf.reserve(writeBufSize);
     }
 
-    writeBuf.clear();
-    writeBuf.reserve(writeBufSize);
+  }
+  else {
+    writeBufVertical.emplace_back(req);
+    if (writeBufVertical.size() == writeBufSize) {
+      for (auto &i : writeBufVertical) {
+        if (i.ioFlag.count() > 0) {
+          writeInternal(i, tick, 1);
+
+          debugprint(LOG_FTL_PAGE_MAPPING,
+                    "WRITE | LPN %" PRIu64 " | %" PRIu64 " - %" PRIu64 " (%" PRIu64
+                    ")",
+                    req.lpn, begin, tick, tick - begin);
+        }
+        else {
+          warn("FTL got empty request");
+        }
+      }
+      writeBufVertical.clear();
+      writeBufVertical.reserve(writeBufSize);
+    }
   }
 
 #else
-  
   if (req.ioFlag.count() > 0) {
     writeInternal(req, tick);
 
@@ -287,10 +322,10 @@ void PageMapping::write(Request &req, uint64_t &tick) {
   else {
     warn("FTL got empty request");
   }
-
 #endif
-  //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
+  tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
 }
+
 
 void PageMapping::trim(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
@@ -316,6 +351,7 @@ void PageMapping::format(LPNRange &range, uint64_t &tick) {
       auto &mappingList = iter->second;
 
       // Do trim
+      /*
       for (uint32_t idx = 0; idx < bitsetSize; idx++) {
         auto &mapping = mappingList.at(idx);
         auto block = blocks.find(mapping.first);
@@ -328,7 +364,18 @@ void PageMapping::format(LPNRange &range, uint64_t &tick) {
 
         // Collect block indices
         list.push_back(mapping.first);
+      }*/
+      auto &mapping = mappingList;
+      auto block = blocks.find(mapping.first);
+
+      if (block == blocks.end()) {
+        panic("Block is not in use");
       }
+
+      block->second.invalidate(mapping.second, lpn_channel[iter->first]);
+
+      // Collect block indices
+      list.push_back(mapping.first);
 
       iter = table.erase(iter);
     }
@@ -906,36 +953,14 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
   uint64_t readFinishedAt = tick;
   uint64_t writeFinishedAt = tick;
   uint64_t eraseFinishedAt = tick;
-
+  MGC = 0;
   if (blocksToReclaim.size() == 0) {
     return;
   }
 
-#ifdef segSB
-  std::vector<vector<pair<PAL::Request, bool>>> transposeBuf;
-
-  // init transpose buffer
-  if (MGC) 
-  {
-    transposeBuf.clear();
-    for (uint32_t i = 0; i < param.pagesInBlock; ++i) 
-    {
-      vector<pair<PAL::Request, bool>> tmp;
-      for (uint j = 0; j < blk_per_superblk; ++j)
-      {
-        tmp.emplace_back(req, 0);
-      }
-      transposeBuf.emplace_back(tmp);
-    }
-  } 
-
-#endif
-
   // For all blocks to reclaim, collecting request structure only
   for (auto &iter : blocksToReclaim) {
     auto block = blocks.find(iter);
-
-    //GCcopypage += block->second.getValidPageCountRaw();
 
     if (block == blocks.end()) {
       panic("Invalid block");
@@ -971,7 +996,122 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
           if (bit.test(idx)) {
             // Invalidate
             block->second.invalidate(pageIndex, idx);
+            
+#ifdef GCbuffer
+            Request gc_req(32);
+            gc_req.lpn = lpns.at(idx);
+            // invalidate block index
+            gc_req.reqID = block->first;
+            // invalidate pageIndex
+            gc_req.reqSubID = pageIndex;
+            // invalidate channel
+            gc_req.ioFlag.reset();
+            gc_req.ioFlag.set(idx);
 
+            GCbuf.emplace_back(gc_req);
+
+            // flush GCbuf
+            if (GCbuf.size() == 7936) {
+              PAL::Request pal_req(32);
+
+              pal_req.reqID = 0;
+              pal_req.reqSubID = 0;
+
+              for (auto &i : GCbuf) {
+                
+                uint32_t lpn = i.lpn;
+
+                /**************Invalidate******************/
+                /*
+                auto invalid_block = blocks.find(i.reqID);
+                uint32_t invalid_page = i.reqSubID; 
+
+                for (uint32_t ch = 0; ch < 32; ++ch) {
+                  if (i.ioFlag.test(ch)) {
+                    invalid_block->second.invalidate(invalid_page, ch);
+                  }
+                }*/
+                /********************************/
+
+                auto mappingList = table.find(lpn);
+
+                if (mappingList == table.end()) {
+                  panic("Invalid mapping table entry");
+                }
+
+                if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
+                  spareblk_idx = getFreeBlock(0);
+                  freeBlock = blocks.find(spareblk_idx);
+                }
+
+                newBlockIdx = freeBlock->first;
+
+                // idx channel
+                uint32_t write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+                uint32_t parity_channel_idx = freeBlock->second.getParityChannelIndex();
+                // parity 
+                if (!warmup && write_channel_idx == parity_channel_idx) {
+                  // FTL req
+                  Request parity_req(32);
+                  parity_req.lpn = 0;
+                  parity_req.ioFlag.reset();
+                  parity_req.ioFlag.set(parity_channel_idx);
+                  // might buggy, reqCount++
+                  parity_req.reqID = 0;
+                  parity_req.reqSubID = parity_channel_idx + 1;
+
+                  // write to FTL
+                  uint32_t pageIndex = block->second.getNextWritePageIndex(parity_channel_idx);
+                  block->second.write(pageIndex, parity_req.lpn, parity_channel_idx, beginAt);
+                  // no need to update mapping table
+                  // invalidate immediately
+                  block->second.invalidate(pageIndex, parity_channel_idx);
+
+                  // PAL req
+                  PAL::Request parity_palreq(parity_req);
+                  parity_palreq.blockIndex = block->first;
+                  parity_palreq.pageIndex = pageIndex;
+                  parity_palreq.ioFlag.reset();
+                  parity_palreq.ioFlag.set(parity_channel_idx);
+                  // write to PAL
+                  pPAL->write(parity_palreq, beginAt);
+
+
+                  // get next write 
+                  if (block->second.getNextWritePageIndex() == param.pagesInBlock) {
+                    spareblk_idx = getFreeBlock(0);
+                    block = blocks.find(spareblk_idx);
+                  }
+                  write_channel_idx = block->second.getNextWriteChannelIndex();
+                }
+                
+                
+                // update mapping
+                lpn_channel[lpn] = write_channel_idx;
+                
+                uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(write_channel_idx);
+                auto &mapping = mappingList->second;
+
+                mapping.first = newBlockIdx;
+                mapping.second = newPageIdx;
+
+                freeBlock->second.write(newPageIdx, lpn, write_channel_idx, beginAt);
+
+                // Issue Write
+                pal_req.blockIndex = newBlockIdx;
+                pal_req.pageIndex = newPageIdx;
+                pal_req.ioFlag.reset();
+                pal_req.ioFlag.set(write_channel_idx);
+
+                writeRequests.emplace_back(pal_req);
+              }
+              GCbuf.clear();
+              GCbuf.reserve(7936);
+            }
+
+#else
+            // Invalidate
+            block->second.invalidate(pageIndex, idx);
             auto mappingList = table.find(lpns.at(idx));
 
             if (mappingList == table.end()) {
@@ -981,19 +1121,56 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
             pDRAM->read(&(*mappingList), 8 * param.ioUnitInPage, tick);
 
 
-            // copying
             if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
               spareblk_idx = getFreeBlock(0);
               freeBlock = blocks.find(spareblk_idx);
             }
 
             newBlockIdx = freeBlock->first;
+
+            // idx channel
             uint32_t write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+            uint32_t parity_channel_idx = freeBlock->second.getParityChannelIndex();
+            // parity 
+            if (!warmup && write_channel_idx == parity_channel_idx) {
+              // FTL req
+              Request parity_req(32);
+              parity_req.lpn = 0;
+              parity_req.ioFlag.reset();
+              parity_req.ioFlag.set(parity_channel_idx);
+              // might buggy, reqCount++
+              parity_req.reqID = 0;
+              parity_req.reqSubID = parity_channel_idx + 1;
 
-            auto &mapping = mappingList->second.at(write_channel_idx);
+              // write to FTL
+              uint32_t pageIndex = freeBlock->second.getNextWritePageIndex(parity_channel_idx);
+              freeBlock->second.write(pageIndex, parity_req.lpn, parity_channel_idx, beginAt);
+              // no need to update mapping table
+              // invalidate immediately
+              freeBlock->second.invalidate(pageIndex, parity_channel_idx);
 
+              // PAL req
+              PAL::Request parity_palreq(parity_req);
+              parity_palreq.blockIndex = freeBlock->first;
+              parity_palreq.pageIndex = pageIndex;
+              parity_palreq.ioFlag.reset();
+              parity_palreq.ioFlag.set(parity_channel_idx);
+              // write to PAL
+              pPAL->write(parity_palreq, beginAt);
+
+
+              // get next write 
+              if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
+                spareblk_idx = getFreeBlock(0);
+                freeBlock = blocks.find(spareblk_idx);
+              }
+              write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+            }
+            // update mapping
+            lpn_channel[lpns.at(idx)] = write_channel_idx;
+            
             uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(write_channel_idx);
-            lpn_channel[lpns.at(write_channel_idx)] = write_channel_idx;
+            auto &mapping = mappingList->second;
 
             mapping.first = newBlockIdx;
             mapping.second = newPageIdx;
@@ -1012,63 +1189,13 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
               req.ioFlag.set();
             }
 
-            // MGC copy to transpose buffer
-            if (MGC)
-            {
-#ifdef segSB
-              transposeBuf.at(newPageIdx).at(idx).first.blockIndex = newBlockIdx;
-              transposeBuf.at(newPageIdx).at(idx).first.pageIndex = newPageIdx;
-              transposeBuf.at(newPageIdx).at(idx).first.ioFlag.set(write_channel_idx);
-              transposeBuf.at(newPageIdx).at(idx).second = 1;
+            writeRequests.push_back(req);
 #endif
-            }
-            else
-            {
-              writeRequests.push_back(req);
-            }
-              
 
             stat.validPageCopies++;
           }
         }
 
-
-        // parity padding
-        //parity_cnt++;
-        /*
-        if (parity_cnt && parity_cnt % 31 == 0) {
-          // write anywhere
-          parity_cnt = 0;
-          freeBlock = blocks.find(getLastFreeBlock(bit));
-          newBlockIdx = freeBlock->first;
-
-          for (uint32_t idx = 0; idx < bitsetSize; idx++) {
-            if (bit.test(idx)) {
-              
-
-              uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(idx);
-
-              freeBlock->second.write(newPageIdx, lpns.at(idx), idx, beginAt);
-
-              // Issue Write
-              req.blockIndex = newBlockIdx;
-              req.pageIndex = newPageIdx;
-
-              if (bRandomTweak) {
-                req.ioFlag.reset();
-                req.ioFlag.set(idx);
-              }
-              else {
-                req.ioFlag.set();
-              }
-
-              writeRequests.push_back(req);
-            
-              stat.validPageCopies++;
-            }
-          }
-        }
-        */
         stat.validSuperPageCopies++;
       }
     }
@@ -1081,36 +1208,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     eraseRequests.push_back(req);
   }
 
-  // write transpose buffer to GC buffer
-#ifdef segSB
-  if (MGC)
-  {
-    uint32_t segments = MGC_segments;
-    uint32_t segment_size = blk_per_superblk / segments;
-    for (uint32_t i = 0; i < segments; ++i)
-    {
-      for (uint32_t j = 0; j < param.pagesInBlock; ++j)
-      {
-        for (uint32_t k = 0; k < segment_size; ++k)
-        {
-          if (transposeBuf[j][i * segment_size + k].second == 0)
-            continue;
-          GCbuf.emplace_back(transposeBuf[j][i * segment_size + k].first);
-          
-          if (GCbuf.size() == GCbufSize) 
-          {
-            for (uint32_t r = 0; r < GCbuf.size(); ++r)
-            {
-              writeRequests.emplace_back(GCbuf[r]);
-            }
-            GCbuf.clear();
-          }
-        }
-      }
-    }
-  }
-
-#endif
   // Do actual I/O here
   // This handles PAL2 limitation (SIGSEGV, infinite loop, or so-on)
   for (auto &iter : readRequests) {
@@ -1125,16 +1222,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
     beginAt = readFinishedAt;
 
     pPAL->write(iter, beginAt);
-    // write parity
-    
-    //pPAL->parity_write();
-    
-    parity_cnt++;
-    while (parity_cnt > 0 && parity_cnt % 31 == 0) {
-      pPAL->parity_write();
-      parity_cnt -= 31;
-    }
-    
 
     writeFinishedAt = MAX(writeFinishedAt, beginAt);
   }
@@ -1146,10 +1233,11 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
     eraseFinishedAt = MAX(eraseFinishedAt, beginAt);
   }
- 
+
   tick = MAX(writeFinishedAt, eraseFinishedAt);
-  //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::DO_GARBAGE_COLLECTION);
+  tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::DO_GARBAGE_COLLECTION);
 }
+
 
 void PageMapping::readInternal(Request &req, uint64_t &tick) {
   PAL::Request palRequest(req);
@@ -1168,7 +1256,8 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
 
     for (uint32_t idx = 0; idx < bitsetSize; idx++) {
       if (req.ioFlag.test(idx) || !bRandomTweak) {
-        auto &mapping = mappingList->second.at(idx);
+        //auto &mapping = mappingList->second.at(idx);
+        auto &mapping = mappingList->second;
 
         if (mapping.first < param.totalPhysicalBlocks &&
             mapping.second < param.pagesInBlock) {
@@ -1205,15 +1294,9 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
 }
 
 void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
-  PAL::Request palRequest(req);
-  std::unordered_map<uint32_t, Block>::iterator block;
-  //static float gcThreshold = conf.readFloat(CONFIG_FTL, FTL_GC_THRESHOLD_RATIO);
-  GCcopypage++;
-  // GcThreshold nFreeBlocks <= 245
-  if (nFreeBlocks <= 245) {
-    printf("First time trigger GC, current user page write %ld\n", GCcopypage);
-    fgetc(stdin);
-    // get how much empty SB per GC
+
+  // GC 5 times
+  if (nFreeBlocks <= 250) {
     while (nFreeBlocks <= 250) {
       if (!sendToPAL) {
         panic("ftl: GC triggered while in initialization");
@@ -1225,50 +1308,45 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
       selectVictimBlock(list, beginAt, MGC);
 
       debugprint(LOG_FTL_PAGE_MAPPING,
-               "GC   | On-demand | %u blocks will be reclaimed", list.size());
-#ifdef DEBUG
-      cout << list.size() << " " << stat.reclaimedBlocks << " blocks will be reclaimed\n" ;
-      cout << nFreeBlocks << " " << " free blocks remain\n";
-#endif
+                  "GC   | On-demand | %u blocks will be reclaimed", list.size());
+
       doGarbageCollection(list, beginAt, MGC);
 
       debugprint(LOG_FTL_PAGE_MAPPING,
-               "GC   | Done | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")", tick,
-               beginAt, beginAt - tick);
+                  "GC   | Done | %" PRIu64 " - %" PRIu64 " (%" PRIu64 ")", tick,
+                  beginAt, beginAt - tick);
 
       stat.gcCount++;
       stat.reclaimedBlocks += list.size();
     }
-    //printf("GC copy pages : %ld\n", GCcopypage);
-    //printf("sort time : %lf\n", segSB_time);
   }
-  
+
+  PAL::Request palRequest(req);
+  std::unordered_map<uint32_t, Block>::iterator block;
   auto mappingList = table.find(req.lpn);
   uint64_t beginAt;
   uint64_t finishedAt = tick;
   bool readBeforeWrite = false;
 
   if (mappingList != table.end()) {
-    uint32_t invaild_idx = lpn_channel[req.lpn];
 
-    auto &mapping = mappingList->second.at(invaild_idx);
-
+    auto &mapping = mappingList->second;
+    uint32_t invalid_idx = lpn_channel[req.lpn];
     if (mapping.first < param.totalPhysicalBlocks &&
         mapping.second < param.pagesInBlock) {
       block = blocks.find(mapping.first);
 
       // Invalidate current page
-      block->second.invalidate(mapping.second, invaild_idx);
-
+      block->second.invalidate(mapping.second, invalid_idx);
     }
+      
     
   }
   else {
     // Create empty mapping
     auto ret = table.emplace(
         req.lpn,
-        std::vector<std::pair<uint32_t, uint32_t>>(
-            bitsetSize, {param.totalPhysicalBlocks, param.pagesInBlock}));
+        std::pair<uint32_t, uint32_t>{param.totalPhysicalBlocks, param.pagesInBlock});
 
     if (!ret.second) {
       panic("Failed to insert new mapping");
@@ -1276,26 +1354,76 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
 
     mappingList = ret.first;
   }
-
   if (spareblk_idx == 9999999)
     spareblk_idx = getFreeBlock(0);
+  
 
+  // Write data to free block
   block = blocks.find(spareblk_idx);
+
   if (block->second.getNextWritePageIndex() == param.pagesInBlock) {
     spareblk_idx = getFreeBlock(0);
     block = blocks.find(spareblk_idx);
   }
 
-  uint32_t write_channel_idx = block->second.getNextWriteChannelIndex();
+  uint32_t write_channel_idx = block->second.getNextWriteChannelIndex();;
+  uint32_t parity_channel_idx = block->second.getParityChannelIndex();
 
-  if (block->first % 1000 == 0) {
-    cout << "Block idx : " << block->first << ", Page idx : " << block->second.getNextWritePageIndex(write_channel_idx);
-    cout << ", Channel idx : " << write_channel_idx << ", LPN : " << req.lpn << "\n";
+#ifndef vertical
+  //SBtype = 0;
+#endif
+  /*
+  if (SBtype == 1) {
+    write_channel_idx = block->second.getNextWriteChannelIndexVertical();
   }
+  else {
+    write_channel_idx = block->second.getNextWriteChannelIndex();
+  }
+*/
+  // check parity channel or not
+  // no parity needed in initialize
+  // parity page as lpn 0
+  if (!warmup && write_channel_idx == parity_channel_idx) {
+    // FTL req
+    Request parity_req(32);
+    parity_req.lpn = 0;
+    parity_req.ioFlag.reset();
+    parity_req.ioFlag.set(parity_channel_idx);
+    // might buggy, reqCount++
+    parity_req.reqID = 0;
+    parity_req.reqSubID = parity_channel_idx + 1;
+
+    // write to FTL
+    uint32_t pageIndex = block->second.getNextWritePageIndex(parity_channel_idx);
+    block->second.write(pageIndex, parity_req.lpn, parity_channel_idx, beginAt);
+    // no need to update mapping table
+    // invalidate immediately
+    block->second.invalidate(pageIndex, parity_channel_idx);
+
+    // PAL req
+    PAL::Request parity_palreq(parity_req);
+    parity_palreq.blockIndex = block->first;
+    parity_palreq.pageIndex = pageIndex;
+    parity_palreq.ioFlag.reset();
+    parity_palreq.ioFlag.set(parity_channel_idx);
+    // write to PAL
+    pPAL->write(parity_palreq, beginAt);
+
+
+    // get next write 
+    if (block->second.getNextWritePageIndex() == param.pagesInBlock) {
+      spareblk_idx = getFreeBlock(0);
+      block = blocks.find(spareblk_idx);
+    }
+    write_channel_idx = block->second.getNextWriteChannelIndex();
+  }
+
 
   req.ioFlag.reset();
   req.ioFlag.set(write_channel_idx);
   lpn_channel[req.lpn] = write_channel_idx;
+  //cout << "Block idx : " << block->first << ", Page idx : " << block->second.getNextWritePageIndex(req.lpn % 32);
+  //cout << ", Channel idx : " << req.lpn % 32 << ", LPN : " << req.lpn << "\n";
 
   if (block == blocks.end()) {
     panic("No such block");
@@ -1320,12 +1448,12 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   for (uint32_t idx = 0; idx < bitsetSize; idx++) {
     if (req.ioFlag.test(idx) || !bRandomTweak) {
       uint32_t pageIndex = block->second.getNextWritePageIndex(idx);
-      auto &mapping = mappingList->second.at(idx);
+      //auto &mapping = mappingList->second.at(idx);
+      auto &mapping = mappingList->second;
 
       beginAt = tick;
 
       block->second.write(pageIndex, req.lpn, idx, beginAt);
-      
 
       // Read old data if needed (Only executed when bRandomTweak = false)
       // Maybe some other init procedures want to perform 'partial-write'
@@ -1356,16 +1484,8 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
         else {
           palRequest.ioFlag.set();
         }
-        
+
         pPAL->write(palRequest, beginAt);
-        // write parity
-        
-        parity_cnt++;
-        while (parity_cnt > 0 && parity_cnt % 31 == 0) {
-          pPAL->parity_write();
-          parity_cnt -= 31;
-        }
-        
       }
 
       finishedAt = MAX(finishedAt, beginAt);
@@ -1375,12 +1495,9 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   // Exclude CPU operation when initializing
   if (sendToPAL) {
     tick = finishedAt;
-    //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE_INTERNAL);
+    tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE_INTERNAL);
   }
 
-  // GC if needed
-  // I assumed that init procedure never invokes GC
-  
 }
 
 void PageMapping::trimInternal(Request &req, uint64_t &tick) {
@@ -1396,7 +1513,9 @@ void PageMapping::trimInternal(Request &req, uint64_t &tick) {
 
     // Do trim
     for (uint32_t idx = 0; idx < bitsetSize; idx++) {
-      auto &mapping = mappingList->second.at(idx);
+      //auto &mapping = mappingList->second.at(idx);
+      auto &mapping = mappingList->second;
+
       auto block = blocks.find(mapping.first);
 
       if (block == blocks.end()) {
