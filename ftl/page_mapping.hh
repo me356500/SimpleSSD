@@ -35,8 +35,9 @@
 #define blk_per_superblk 32
 #define GCbufSize 7936
 #define writeBufSize 7936
+#define IN_GCBUFFER 7777
 #define writebuffer
-//#define GCbuffer
+#define GCbuffer
 
 namespace SimpleSSD {
 
@@ -73,6 +74,7 @@ class PageMapping : public AbstractFTL {
   uint64_t cur_tick;
   uint64_t GCcopypage;
   uint32_t warmup;
+  uint32_t parity_write;
   //std::unordered_map<uint64_t, uint32_t> lpn_channel;
   vector<uint32_t> lpn_channel;
   uint32_t spareblk_idx;
