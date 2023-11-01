@@ -108,7 +108,7 @@ bool PageMapping::initialize() {
   req.ioFlag.set();
 
   lpn_channel.clear();
-  warmup = 1;
+  warmup = 0;
   lpn_channel.resize(68000000);
   GCbuf.clear();
   writeBuf.clear();
