@@ -108,7 +108,7 @@ bool PageMapping::initialize() {
   req.ioFlag.set();
 
   lpn_channel.clear();
-  warmup = 0;
+  warmup = 1;
   lpn_channel.resize(68000000);
   GCbuf.clear();
   writeBuf.clear();
@@ -1109,7 +1109,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
                 writeRequests.emplace_back(pal_req);
               }
               GCbuf.clear();
-              GCbuf.reserve(GCbufSize);
             }
 
 #else
@@ -1334,13 +1333,13 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   bool readBeforeWrite = false;
 
   if (lpn_channel[req.lpn] == IN_GCBUFFER) {
-    // do nothing
-    for (auto &i : GCbuf) {
-
-      if (i.lpn == req.lpn) {
-
-        i.lpn = 0;
+    // remove request in gcbuffer
+    for (auto i = GCbuf.begin(); i != GCbuf.end(); ) {
+      if (i->lpn == req.lpn) {
+        i = GCbuf.erase(i);
       }
+      else 
+        ++i;
     }
   }
   else {
@@ -1403,7 +1402,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
   // check parity channel or not
   // no parity needed in initialize
   // parity page as lpn 0
-  if (!warmup && write_channel_idx == parity_channel_idx) {
+  if (write_channel_idx == parity_channel_idx) {
     // FTL req
     Request parity_req(32);
     parity_req.lpn = 0;
@@ -1427,7 +1426,8 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL) {
     parity_palreq.ioFlag.reset();
     parity_palreq.ioFlag.set(parity_channel_idx);
     // write to PAL
-    pPAL->write(parity_palreq, tick);
+    if (!warmup)
+      pPAL->write(parity_palreq, tick);
 
     ++parity_write;
     // get next write 

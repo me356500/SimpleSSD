@@ -65,7 +65,8 @@ class PageMapping : public AbstractFTL {
   uint32_t bitsetSize;
 
   std::vector<Request> writeBufVertical;
-  std::vector<Request> GCbuf;
+  //std::vector<Request> GCbuf;
+  std::list<Request> GCbuf;
   //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
   double segSB_time;
