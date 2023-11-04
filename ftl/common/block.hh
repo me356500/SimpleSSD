@@ -52,6 +52,7 @@ class Block {
   uint32_t eraseCount; //ECs
 
   uint32_t write_channel_idx;
+  uint32_t SBtype;
  public:
   Block(uint32_t, uint32_t, uint32_t);
   Block(const Block &);      // Copy constructor
@@ -79,6 +80,8 @@ class Block {
   uint32_t getNextWritePageIndex(uint32_t);
 
   uint32_t getNextWriteChannelIndex();
+  uint32_t getNextWriteChannelIndexVertical();
+  uint32_t getSBtype();
 
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
   bool read(uint32_t, uint32_t, uint64_t);
@@ -87,6 +90,8 @@ class Block {
 
   void invalidate(uint32_t, uint32_t);
 
+  uint32_t isfull();
+  uint32_t isempty();
   void setValidBits(uint32_t, uint32_t, bool);
   void setErasedBits(uint32_t, uint32_t, bool);
   void setppLPN(uint32_t, uint32_t, uint64_t);

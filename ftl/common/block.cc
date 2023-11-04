@@ -63,6 +63,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   erase();
   eraseCount = 0;
   write_channel_idx = 0;
+  SBtype = 9;
 }
 
 Block::Block(const Block &old)
@@ -87,6 +88,7 @@ Block::Block(const Block &old)
          
   eraseCount = old.eraseCount;
   write_channel_idx = old.write_channel_idx;
+  SBtype = old.SBtype;
 }
 
 Block::Block(Block &&old) noexcept
@@ -102,7 +104,8 @@ Block::Block(Block &&old) noexcept
       ppLPNs(std::move(old.ppLPNs)),
       lastAccessed(std::move(old.lastAccessed)),
       eraseCount(std::move(old.eraseCount)),
-      write_channel_idx(std::move(old.write_channel_idx)) {
+      write_channel_idx(std::move(old.write_channel_idx)),
+      SBtype(std::move(old.SBtype)) {
   // TODO Use std::exchange to set old value to null (C++14)
   old.idx = 0;
   old.pageCount = 0;
@@ -115,6 +118,7 @@ Block::Block(Block &&old) noexcept
   old.lastAccessed = 0;
   old.eraseCount = 0;
   old.write_channel_idx = 0;
+  old.SBtype = 9;
 }
 
 Block::~Block() {
@@ -165,6 +169,7 @@ Block &Block::operator=(Block &&rhs) {
     lastAccessed = std::move(rhs.lastAccessed);
     eraseCount = std::move(rhs.eraseCount);
     write_channel_idx = std::move(rhs.write_channel_idx);
+    SBtype = std::move(rhs.SBtype);
 
     rhs.pNextWritePageIndex = nullptr;
     rhs.pValidBits = nullptr;
@@ -174,6 +179,7 @@ Block &Block::operator=(Block &&rhs) {
     rhs.lastAccessed = 0;
     rhs.eraseCount = 0;
     rhs.write_channel_idx = 0;
+    rhs.SBtype = 9;
   }
 
   return *this;
@@ -312,6 +318,32 @@ uint32_t Block::getNextWritePageIndex() {
   return idx;
 }
 
+uint32_t Block::isfull() {
+  bool full = 1;
+
+  for (uint32_t i = 0; i < ioUnitInPage; ++i) {
+    if (pNextWritePageIndex[i] != 256) {
+      full = 0;
+      break;
+    }
+  }
+
+  return full;
+}
+
+uint32_t Block::isempty() {
+  bool empty = 1;
+  
+  for (uint32_t i = 0; i < ioUnitInPage; ++i) {
+    if (pNextWritePageIndex[i] != 0) {
+      empty = 0;
+      break;
+    }
+  }
+
+  return empty;
+}
+
 uint32_t Block::getNextWritePageIndex(uint32_t idx) {
   return pNextWritePageIndex[idx];
 }
@@ -432,7 +464,8 @@ void Block::erase() {
   }
 
   memset(pNextWritePageIndex, 0, sizeof(uint32_t) * ioUnitInPage);
-
+  write_channel_idx = 0;
+  SBtype = 9;
   eraseCount++;
 }
 
@@ -460,6 +493,20 @@ void Block::setppLPN(uint32_t pageIndex, uint32_t idx, uint64_t lpn) {
 uint32_t Block::getNextWriteChannelIndex() {
   write_channel_idx %= 32;
   return write_channel_idx++;
+}
+
+uint32_t Block::getNextWriteChannelIndexVertical() {
+
+  if (pNextWritePageIndex[write_channel_idx] == 256) {
+    ++write_channel_idx;
+    
+  }
+  write_channel_idx %= 32;
+  return write_channel_idx;
+}
+
+uint32_t Block::getSBtype() {
+  return SBtype;
 }
 
 }  // namespace FTL

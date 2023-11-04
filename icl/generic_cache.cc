@@ -545,7 +545,7 @@ bool GenericCache::read(Request &req, uint64_t &tick) {
   return ret;
 }
 // True when cold-miss/hit
-bool GenericCache::write(Request &req, uint64_t &tick) {
+bool GenericCache::write(Request &req, uint64_t &tick, bool SBtype) {
   bool ret = false;
   uint64_t flash = tick;
   bool dirty = false;
@@ -563,7 +563,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
     dirty = true;
   }
   else {
-    pFTL->write(reqInternal, flash);
+    pFTL->write(reqInternal, flash, SBtype);
   }
   
   if (useWriteCaching) {
@@ -734,7 +734,7 @@ bool GenericCache::write(Request &req, uint64_t &tick) {
   }
   else {
     if (dirty) {
-      pFTL->write(reqInternal, tick);
+      pFTL->write(reqInternal, tick, SBtype);
     }
     else {
       tick = flash;

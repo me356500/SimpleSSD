@@ -105,6 +105,11 @@ void ICL::write(Request &req, uint64_t &tick) {
   // ioflag 32
   // ioFlag.set(r.range.slpn % iocount);
   // lpn = slpn / iocount
+  bool SBtype = 0;
+
+  if (req.length <= 32 * 1024) {
+    SBtype = 1;
+  }
 
   reqInternal.reqID = req.reqID;
   reqInternal.offset = req.offset;
@@ -115,7 +120,7 @@ void ICL::write(Request &req, uint64_t &tick) {
     reqInternal.reqSubID = i + 1;
     reqInternal.range.slpn = req.range.slpn + i;
     reqInternal.length = MIN(reqRemain, logicalPageSize - reqInternal.offset);
-    pCache->write(reqInternal, beginAt);
+    pCache->write(reqInternal, beginAt, SBtype);
     reqRemain -= reqInternal.length;
     reqInternal.offset = 0;
 

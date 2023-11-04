@@ -97,7 +97,7 @@ class GenericCache : public AbstractCache {
   GenericCache(ConfigReader &, FTL::FTL *, DRAM::AbstractDRAM *);
   ~GenericCache();
   bool read(Request &, uint64_t &) override;
-  bool write(Request &, uint64_t &) override;
+  bool write(Request &, uint64_t &, bool = false) override;
  
   void flush(LPNRange &, uint64_t &) override;
   void flush_cache(uint64_t &tick);

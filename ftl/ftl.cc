@@ -73,10 +73,10 @@ void FTL::read(Request &req, uint64_t &tick) {
   //tick += applyLatency(CPU::FTL, CPU::READ);
 }
 
-void FTL::write(Request &req, uint64_t &tick) {
+void FTL::write(Request &req, uint64_t &tick, bool SBtype) {
   debugprint(LOG_FTL, "WRITE | LPN %" PRIu64, req.lpn);
 
-  pFTL->write(req, tick);
+  pFTL->write(req, tick, SBtype);
 
   //tick += applyLatency(CPU::FTL, CPU::WRITE);
 }

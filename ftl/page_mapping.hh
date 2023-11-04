@@ -38,7 +38,8 @@
 #define IN_GCBUFFER 7777
 #define writebuffer
 #define GCbuffer
-
+#define vertical
+//#define DEBUG
 namespace SimpleSSD {
 
 namespace FTL {
@@ -66,7 +67,8 @@ class PageMapping : public AbstractFTL {
 
   std::vector<Request> writeBufVertical;
   //std::vector<Request> GCbuf;
-  std::list<Request> GCbuf;
+  // only need lpn
+  std::list<uint64_t> GCbuf;
   //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
   double segSB_time;
@@ -75,10 +77,12 @@ class PageMapping : public AbstractFTL {
   uint64_t cur_tick;
   uint64_t GCcopypage;
   uint32_t warmup;
+  vector<uint32_t> pwrite;
   uint32_t parity_write;
   //std::unordered_map<uint64_t, uint32_t> lpn_channel;
   vector<uint32_t> lpn_channel;
   uint32_t spareblk_idx;
+  uint32_t MGCcount;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;
@@ -102,10 +106,11 @@ class PageMapping : public AbstractFTL {
   void calculateTotalPages(uint64_t &, uint64_t &);
 
   void readInternal(Request &, uint64_t &);
-  void writeInternal(Request &, uint64_t &, bool = true);
+  void writeInternal(Request &, uint64_t &, bool = true, bool = false);
   void trimInternal(Request &, uint64_t &);
   void eraseInternal(PAL::Request &, uint64_t &);
 
+  void getBlockStatus();
  public:
   PageMapping(ConfigReader &, Parameter &, PAL::PAL *, DRAM::AbstractDRAM *);
   ~PageMapping();
@@ -113,7 +118,7 @@ class PageMapping : public AbstractFTL {
   bool initialize() override;
 
   void read(Request &, uint64_t &) override;
-  void write(Request &, uint64_t &) override;
+  void write(Request &, uint64_t &, bool = false) override;
   void trim(Request &, uint64_t &) override;
 
   void format(LPNRange &, uint64_t &) override;

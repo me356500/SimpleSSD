@@ -51,7 +51,7 @@ class AbstractCache : public StatObject {
   virtual ~AbstractCache();
 
   virtual bool read(Request &, uint64_t &) = 0;
-  virtual bool write(Request &, uint64_t &) = 0;
+  virtual bool write(Request &, uint64_t &, bool = false) = 0;
 
   virtual void flush(LPNRange &, uint64_t &) = 0;
   virtual void trim(LPNRange &, uint64_t &) = 0;
