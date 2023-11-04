@@ -42,6 +42,7 @@
 #define vertical
 //#define DEBUG
 #define transposebuffer
+#define segSB
 namespace SimpleSSD {
 
 namespace FTL {
@@ -90,6 +91,8 @@ class PageMapping : public AbstractFTL {
     uint64_t reclaimedBlocks;
     uint64_t validSuperPageCopies;
     uint64_t validPageCopies;
+    uint64_t MGCcount;
+    uint64_t MGCcopydata;
   } stat;
 
   float freeBlockRatio();
@@ -104,7 +107,6 @@ class PageMapping : public AbstractFTL {
   void flushGCbuf(std::vector<PAL::Request> &, uint64_t &);
   void doGarbageCollection(std::vector<uint32_t> &, uint64_t &, uint32_t &);
 
-  void write_parity(uint32_t &, uint64_t &, uint32_t &);
 
   float calculateWearLeveling();
   void calculateTotalPages(uint64_t &, uint64_t &);

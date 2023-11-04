@@ -65,6 +65,8 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   write_channel_idx = 0;
   SBtype = 9;
   write_seg_idx = 0;
+  partialvalidBits = std::vector<uint32_t>(4, 0);
+  validpage_cnt = 0;
 }
 
 Block::Block(const Block &old)
@@ -91,6 +93,8 @@ Block::Block(const Block &old)
   write_channel_idx = old.write_channel_idx;
   SBtype = old.SBtype;
   write_seg_idx = old.write_seg_idx;
+  partialvalidBits = old.partialvalidBits;
+  validpage_cnt = old.validpage_cnt;
 }
 
 Block::Block(Block &&old) noexcept
@@ -108,7 +112,9 @@ Block::Block(Block &&old) noexcept
       eraseCount(std::move(old.eraseCount)),
       write_channel_idx(std::move(old.write_channel_idx)),
       SBtype(std::move(old.SBtype)),
-      write_seg_idx(std::move(old.write_seg_idx)) {
+      write_seg_idx(std::move(old.write_seg_idx)),
+      partialvalidBits(std::move(old.partialvalidBits)),
+      validpage_cnt(std::move(old.validpage_cnt)) {
   // TODO Use std::exchange to set old value to null (C++14)
   old.idx = 0;
   old.pageCount = 0;
@@ -123,6 +129,8 @@ Block::Block(Block &&old) noexcept
   old.write_channel_idx = 0;
   old.SBtype = 9;
   old.write_seg_idx = 0;
+  old.partialvalidBits = std::vector<uint32_t>(4, 0);
+  old.validpage_cnt = 0;
 }
 
 Block::~Block() {
@@ -175,6 +183,8 @@ Block &Block::operator=(Block &&rhs) {
     write_channel_idx = std::move(rhs.write_channel_idx);
     SBtype = std::move(rhs.SBtype);
     write_seg_idx = std::move(rhs.write_seg_idx);
+    partialvalidBits = std::move(rhs.partialvalidBits);
+    validpage_cnt = std::move(rhs.validpage_cnt);
 
     rhs.pNextWritePageIndex = nullptr;
     rhs.pValidBits = nullptr;
@@ -186,6 +196,8 @@ Block &Block::operator=(Block &&rhs) {
     rhs.write_channel_idx = 0;
     rhs.SBtype = 9;
     rhs.write_seg_idx = 0;
+    rhs.partialvalidBits = std::vector<uint32_t>(4, 0);
+    rhs.validpage_cnt = 0;
   }
 
   return *this;
@@ -252,10 +264,7 @@ uint32_t Block::getPartialValidPageCount(uint32_t idx) {
   }
   else
   {
-    for(uint32_t channel = idx * 8; channel < (idx + 1) * 8; ++channel) 
-    {
-      ret += getBlockPageCount(channel);
-    }
+    return partialvalidBits.at(idx);
   }
   
   return ret;
@@ -286,9 +295,11 @@ uint32_t Block::getValidPageCountRaw() {
     ret = pValidBits->count();
   }
   else {
+    /*
     for (auto &iter : validBits) {
       ret += iter.count();
-    }
+    }*/
+    return validpage_cnt;
   }
 
   return ret;
@@ -445,6 +456,16 @@ bool Block::write(uint32_t pageIndex, uint64_t lpn, uint32_t idx,
 
       ppLPNs[pageIndex][idx] = lpn;
     }
+    // update partial valid
+    /*
+      0 ~ 7   : 0
+      8 ~ 15  : 1
+      16 ~ 23 : 2
+      24 ~ 31 : 3
+    */
+    uint32_t segment_idx = idx / 8;
+    partialvalidBits[segment_idx]++;
+    validpage_cnt++;
 
     pNextWritePageIndex[idx] = pageIndex + 1;
   }
@@ -473,6 +494,8 @@ void Block::erase() {
   write_channel_idx = 0;
   SBtype = 9;
   write_seg_idx = 0;
+  partialvalidBits = std::vector<uint32_t>(4, 0);
+  validpage_cnt = 0;
   eraseCount++;
 }
 
@@ -482,11 +505,30 @@ void Block::invalidate(uint32_t pageIndex, uint32_t idx) {
   }
   else {
     validBits.at(pageIndex).reset(idx);
+    uint32_t segment_idx = idx / 8;
+    partialvalidBits[segment_idx]--;
+    validpage_cnt--;
   }
 }
 
 void Block::setValidBits(uint32_t pageIndex, uint32_t idx, bool value) {
+
+  bool origin = validBits.at(pageIndex).test(idx);
+
+  if (!origin && value) {
+    validpage_cnt++;
+    uint32_t segment_idx = idx / 8;
+    partialvalidBits[segment_idx]++;
+  }
+
+  if (origin && !value) {
+    validpage_cnt--;
+    uint32_t segment_idx = idx / 8;
+    partialvalidBits[segment_idx]--;
+  }
+
   validBits.at(pageIndex).set(idx, value);
+
 }
 
 void Block::setErasedBits(uint32_t pageIndex, uint32_t idx, bool value) {

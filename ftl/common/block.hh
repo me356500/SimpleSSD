@@ -61,7 +61,8 @@ class Block {
   */
   uint32_t SBtype;
   uint32_t write_seg_idx;
-
+  std::vector<uint32_t> partialvalidBits;
+  uint32_t validpage_cnt;
  public:
   Block(uint32_t, uint32_t, uint32_t);
   Block(const Block &);      // Copy constructor
