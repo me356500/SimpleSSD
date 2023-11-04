@@ -36,10 +36,12 @@
 #define GCbufSize 7936
 #define writeBufSize 7936
 #define IN_GCBUFFER 7777
+#define IN_TPBUFFER 6666
 #define writebuffer
 #define GCbuffer
 #define vertical
 //#define DEBUG
+#define transposebuffer
 namespace SimpleSSD {
 
 namespace FTL {
@@ -98,6 +100,8 @@ class PageMapping : public AbstractFTL {
                              const EVICT_POLICY, uint64_t);
   void exchange_seg(uint32_t &, uint32_t &, uint32_t );
   void selectVictimBlock(std::vector<uint32_t> &, uint64_t &, uint32_t &);
+  
+  void flushGCbuf(std::vector<PAL::Request> &, uint64_t &);
   void doGarbageCollection(std::vector<uint32_t> &, uint64_t &, uint32_t &);
 
   void write_parity(uint32_t &, uint64_t &, uint32_t &);

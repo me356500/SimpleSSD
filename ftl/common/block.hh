@@ -52,7 +52,16 @@ class Block {
   uint32_t eraseCount; //ECs
 
   uint32_t write_channel_idx;
+  /*
+    0 : Horizontal
+    1 : Vertical
+    3 : usual GC
+    4 : MGC
+    9 : init
+  */
   uint32_t SBtype;
+  uint32_t write_seg_idx;
+
  public:
   Block(uint32_t, uint32_t, uint32_t);
   Block(const Block &);      // Copy constructor
@@ -81,7 +90,9 @@ class Block {
 
   uint32_t getNextWriteChannelIndex();
   uint32_t getNextWriteChannelIndexVertical();
+  uint32_t getNextWriteChannelIndexSeg();
   uint32_t getSBtype();
+  void setSBtype(uint32_t);
 
   bool getPageInfo(uint32_t, std::vector<uint64_t> &, Bitset &);
   bool read(uint32_t, uint32_t, uint64_t);

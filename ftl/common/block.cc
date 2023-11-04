@@ -64,6 +64,7 @@ Block::Block(uint32_t blockIdx, uint32_t count, uint32_t ioUnit)
   eraseCount = 0;
   write_channel_idx = 0;
   SBtype = 9;
+  write_seg_idx = 0;
 }
 
 Block::Block(const Block &old)
@@ -89,6 +90,7 @@ Block::Block(const Block &old)
   eraseCount = old.eraseCount;
   write_channel_idx = old.write_channel_idx;
   SBtype = old.SBtype;
+  write_seg_idx = old.write_seg_idx;
 }
 
 Block::Block(Block &&old) noexcept
@@ -105,7 +107,8 @@ Block::Block(Block &&old) noexcept
       lastAccessed(std::move(old.lastAccessed)),
       eraseCount(std::move(old.eraseCount)),
       write_channel_idx(std::move(old.write_channel_idx)),
-      SBtype(std::move(old.SBtype)) {
+      SBtype(std::move(old.SBtype)),
+      write_seg_idx(std::move(old.write_seg_idx)) {
   // TODO Use std::exchange to set old value to null (C++14)
   old.idx = 0;
   old.pageCount = 0;
@@ -119,6 +122,7 @@ Block::Block(Block &&old) noexcept
   old.eraseCount = 0;
   old.write_channel_idx = 0;
   old.SBtype = 9;
+  old.write_seg_idx = 0;
 }
 
 Block::~Block() {
@@ -170,6 +174,7 @@ Block &Block::operator=(Block &&rhs) {
     eraseCount = std::move(rhs.eraseCount);
     write_channel_idx = std::move(rhs.write_channel_idx);
     SBtype = std::move(rhs.SBtype);
+    write_seg_idx = std::move(rhs.write_seg_idx);
 
     rhs.pNextWritePageIndex = nullptr;
     rhs.pValidBits = nullptr;
@@ -180,6 +185,7 @@ Block &Block::operator=(Block &&rhs) {
     rhs.eraseCount = 0;
     rhs.write_channel_idx = 0;
     rhs.SBtype = 9;
+    rhs.write_seg_idx = 0;
   }
 
   return *this;
@@ -466,6 +472,7 @@ void Block::erase() {
   memset(pNextWritePageIndex, 0, sizeof(uint32_t) * ioUnitInPage);
   write_channel_idx = 0;
   SBtype = 9;
+  write_seg_idx = 0;
   eraseCount++;
 }
 
@@ -505,8 +512,27 @@ uint32_t Block::getNextWriteChannelIndexVertical() {
   return write_channel_idx;
 }
 
+uint32_t Block::getNextWriteChannelIndexSeg() {
+  uint32_t end_ch = 8 * (write_seg_idx + 1) - 1;
+  
+  if (pNextWritePageIndex[end_ch] == 256) {
+    write_seg_idx++;
+    write_channel_idx = write_seg_idx * 8;
+  }
+  else if (write_channel_idx > end_ch) {
+    write_channel_idx = write_seg_idx * 8;
+  }
+
+
+  return write_channel_idx++;
+}
+
 uint32_t Block::getSBtype() {
   return SBtype;
+}
+
+void Block::setSBtype(uint32_t type) {
+  SBtype = type;
 }
 
 }  // namespace FTL
