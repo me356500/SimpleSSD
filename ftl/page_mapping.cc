@@ -135,6 +135,9 @@ bool PageMapping::initialize() {
   warmup = 1;
   lpn_channel = vector<uint32_t>(68000000, 32);
   GCbuf.clear();
+  GCbuf_seg.clear();
+  GCbuf.reserve(GCbufSize);
+  GCbuf_seg.reserve(GCbufSize);
   writeBuf.clear();
   writeBufVertical.clear();
   writeBuf.reserve(writeBufSize);
@@ -549,10 +552,11 @@ void PageMapping::calculateVictimWeight(
   segSB_weight.clear();
   segSB_weight.resize(MGC_segments);
 
+/*
   for (int i = 0; i < MGC_segments; ++i)
   {
     segSB_weight[i].reserve(blocks.size());
-  }
+  }*/
 
 #endif
 
@@ -568,12 +572,17 @@ void PageMapping::calculateVictimWeight(
         }
 
 #ifdef segSB
-        for (int i = 0; i < MGC_segments; ++i) 
-        {
-          segSB_weight[i].emplace_back(iter.first, iter.second.getPartialValidPageCount(i));
+        if (iter.second.getSBtype() == 1) {
+          for (int i = 0; i < MGC_segments; ++i)  {
+            segSB_weight[i].emplace_back(iter.first, iter.second.getPartialValidPageCount(i));
+          }
         }
+        else if (iter.second.getSBtype() == 0) {
+          weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
+        }
+
 #endif
-        weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
+        
       }
 
       break;
@@ -704,7 +713,10 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   
   */
 #ifdef segSB
-
+  if (segSB_weight[0].size() < 1) {
+    list.emplace_back(weight[0].first);
+    return;
+  }
   
 
   for (int i = 0; i < MGC_segments; ++i)
@@ -721,7 +733,6 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   uint32_t parityBlkIdx = 0;
   uint32_t maxCount = 0;
   uint32_t MGCcopydata = 0;
-  uint32_t weight_len = weight.size();
   // MLCgetGCvictimGreedy.c:50
   // Greedy select 4 segments
   for (uint32_t i = 0; i < MGC_segments; ++i) 
@@ -754,7 +765,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
     if (MGCcandidate[i].first % blk_per_superblk != parityBlkIdx) 
     {
-      for (uint32_t j = 1; j < weight_len; ++j) 
+      for (uint32_t j = 1; j < segSB_weight[i].size(); ++j) 
       {
         if (segSB_weight[i][j].first % blk_per_superblk == parityBlkIdx) 
         {
@@ -928,7 +939,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   //tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::SELECT_VICTIM_BLOCK);
 }
 
-void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t &tick) {
+void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t &tick, uint32_t SBtype) {
 
   PAL::Request pal_req(32);
 
@@ -939,13 +950,17 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
   }
 
   if (freeBlock->second.getSBtype() == 9) {
-    freeBlock->second.setSBtype(0);
+    freeBlock->second.setSBtype(SBtype);
   }
 
   uint32_t newBlockIdx = freeBlock->first;
 
-  for (auto &lpn : GCbuf) { 
-    
+  auto &Buffer = (SBtype ? GCbuf_seg : GCbuf);
+
+  for (auto &i : Buffer) { 
+    uint64_t lpn = i.first;
+    uint32_t valid = i.second;
+
     auto mappingList = table.find(lpn);
 
     if (mappingList == table.end()) {
@@ -957,6 +972,9 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
       freeBlock = blocks.find(spareblk_idx);
     }
 
+    if (freeBlock->second.getSBtype() == 9) {
+      freeBlock->second.setSBtype(SBtype);
+    }
     newBlockIdx = freeBlock->first;
 
     // idx channel
@@ -992,17 +1010,22 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
       write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
     }
     
-    // update mapping
-    lpn_channel[lpn] = write_channel_idx;
     newBlockIdx = freeBlock->first;
 
     uint32_t newPageIdx = freeBlock->second.getNextWritePageIndex(write_channel_idx);
     auto &mapping = mappingList->second;
 
-    mapping.first = newBlockIdx;
-    mapping.second = newPageIdx;
-
     freeBlock->second.write(newPageIdx, lpn, write_channel_idx, tick);
+
+    // update mapping table
+    if (valid) {
+      lpn_channel[lpn] = write_channel_idx;
+      mapping.first = newBlockIdx;
+      mapping.second = newPageIdx;
+    }
+    else {
+      freeBlock->second.invalidate(newPageIdx, write_channel_idx);
+    }
 
     // Issue Write
     pal_req.blockIndex = newBlockIdx;
@@ -1045,7 +1068,15 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
     getBlockStatus();
   }
 #endif
-  GCbuf.clear();
+  if (SBtype == 1) {
+    GCbuf_seg.clear();
+    GCbuf_seg.reserve(GCbufSize);
+  }
+  else {
+    GCbuf.clear();
+    GCbuf.reserve(GCbufSize);
+  }
+  
 }
 
 void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
@@ -1140,11 +1171,11 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
             }
             
-            GCbuf.emplace_back(lpns.at(idx));
+            GCbuf.emplace_back(lpns.at(idx), 1);
 
             // flush GCbuf
             if (GCbuf.size() == GCbufSize) {
-              flushGCbuf(writeRequests, tick);
+              flushGCbuf(writeRequests, tick, 0);
             }
 
 #else
@@ -1262,13 +1293,13 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
           if (transposeBuf[j][i * segment_size + k].second == 0)
             continue;
           
-          GCbuf.emplace_back(transposeBuf[j][i * segment_size + k].first);
+          GCbuf_seg.emplace_back(transposeBuf[j][i * segment_size + k].first, 1);
 
-          lpn_channel[transposeBuf[j][i * segment_size + k].first] = IN_GCBUFFER;
+          lpn_channel[transposeBuf[j][i * segment_size + k].first] = IN_TPBUFFER;
           transposeBuf[j][i * segment_size + k].second = 0;
 
-          if (GCbuf.size() == GCbufSize) {
-            flushGCbuf(writeRequests, tick);
+          if (GCbuf_seg.size() == GCbufSize) {
+            flushGCbuf(writeRequests, tick, 1);
           }
         }
       }
@@ -1419,12 +1450,17 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
 
   if (lpn_channel[req.lpn] == IN_GCBUFFER) {
     // remove request in gcbuffer
-    for (auto i = GCbuf.begin(); i != GCbuf.end(); ) {
-      if (*i == req.lpn) {
-        i = GCbuf.erase(i);
+    for (auto &i : GCbuf) {
+      if (i.first == req.lpn) {
+        i.second = 0;
       }
-      else 
-        ++i;
+    }
+  }
+  else if (lpn_channel[req.lpn] == IN_TPBUFFER) {
+    for (auto &i : GCbuf_seg) {
+      if (i.first == req.lpn) {
+        i.second = 0;
+      }
     }
   }
   else {
@@ -1532,6 +1568,10 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
       write_channel_idx = block->second.getNextWriteChannelIndex();
   
 
+  }
+
+  if (block->second.getSBtype() == 9) {
+    block->second.setSBtype(SBtype);
   }
 
   req.ioFlag.reset();

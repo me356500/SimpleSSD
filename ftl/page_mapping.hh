@@ -37,6 +37,7 @@
 #define writeBufSize 7936
 #define IN_GCBUFFER 7777
 #define IN_TPBUFFER 6666
+#define NotFound 600000
 #define writebuffer
 #define GCbuffer
 #define vertical
@@ -71,7 +72,10 @@ class PageMapping : public AbstractFTL {
   std::vector<Request> writeBufVertical;
   //std::vector<Request> GCbuf;
   // only need lpn
-  std::list<uint64_t> GCbuf;
+  //std::list<uint64_t> GCbuf;
+  //std::list<uint64_t> GCbuf_seg;
+  std::vector<std::pair<uint64_t, uint32_t>> GCbuf;
+  std::vector<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
   double segSB_time;
@@ -104,7 +108,7 @@ class PageMapping : public AbstractFTL {
   void exchange_seg(uint32_t &, uint32_t &, uint32_t );
   void selectVictimBlock(std::vector<uint32_t> &, uint64_t &, uint32_t &);
   
-  void flushGCbuf(std::vector<PAL::Request> &, uint64_t &);
+  void flushGCbuf(std::vector<PAL::Request> &, uint64_t &, uint32_t);
   void doGarbageCollection(std::vector<uint32_t> &, uint64_t &, uint32_t &);
 
 
