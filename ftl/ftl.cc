@@ -70,7 +70,7 @@ void FTL::read(Request &req, uint64_t &tick) {
 
   pFTL->read(req, tick);
 
-  //tick += applyLatency(CPU::FTL, CPU::READ);
+  tick += applyLatency(CPU::FTL, CPU::READ);
 }
 
 void FTL::write(Request &req, uint64_t &tick, bool SBtype) {
@@ -78,7 +78,7 @@ void FTL::write(Request &req, uint64_t &tick, bool SBtype) {
 
   pFTL->write(req, tick, SBtype);
 
-  //tick += applyLatency(CPU::FTL, CPU::WRITE);
+  tick += applyLatency(CPU::FTL, CPU::WRITE);
 }
 
 void FTL::trim(Request &req, uint64_t &tick) {

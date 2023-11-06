@@ -575,7 +575,7 @@ void PAL2::TimelineScheduling(Command &req, CPDPBP &reqCPD) {
 #if 1
     stats->UpdateLastTick(tsDMA1.EndTick);
 #if GATHER_RESOURCE_CONFLICT
-    stats->AddLatency(req, &reqCPD, reqDieIdx, tsDMA0, tsMEM, tsDMA1, confType);
+    //stats->AddLatency(req, &reqCPD, reqDieIdx, tsDMA0, tsMEM, tsDMA1, confType);
 #else
     stats->AddLatency(req, &reqCPD, reqDieIdx, tsDMA0, tsMEM, tsDMA1);
 #endif

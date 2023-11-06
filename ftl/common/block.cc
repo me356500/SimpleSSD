@@ -135,7 +135,9 @@ Block::Block(Block &&old) noexcept
 
 Block::~Block() {
   free(pNextWritePageIndex);
-  free(pLPNs);
+
+  if (pLPNs)
+    free(pLPNs);
 
   delete pValidBits;
   delete pErasedBits;

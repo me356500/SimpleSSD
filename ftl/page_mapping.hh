@@ -69,7 +69,7 @@ class PageMapping : public AbstractFTL {
   bool bRandomTweak;
   uint32_t bitsetSize;
 
-  std::vector<Request> writeBufVertical;
+  
   //std::vector<Request> GCbuf;
   // only need lpn
   //std::list<uint64_t> GCbuf;
@@ -78,6 +78,7 @@ class PageMapping : public AbstractFTL {
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
+  std::vector<Request> writeBufVertical;
   double segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
   uint64_t parity_cnt;
