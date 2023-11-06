@@ -1386,6 +1386,13 @@ void PageMapping::readInternal(Request &req, uint64_t &tick) {
 
 void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bool SBtype) {
 
+  PAL::Request palRequest(req);
+  std::unordered_map<uint32_t, Block>::iterator block;
+  auto mappingList = table.find(req.lpn);
+  uint64_t beginAt;
+  uint64_t finishedAt = tick;
+  bool readBeforeWrite = false;
+
   // GC 5 times
   if (nFreeBlocks <= 245) {
     while (nFreeBlocks <= 250) {
@@ -1433,12 +1440,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
     }
   }
 
-  PAL::Request palRequest(req);
-  std::unordered_map<uint32_t, Block>::iterator block;
-  auto mappingList = table.find(req.lpn);
-  uint64_t beginAt;
-  uint64_t finishedAt = tick;
-  bool readBeforeWrite = false;
+
 
   if (lpn_channel[req.lpn] == IN_GCBUFFER) {
     // remove request in gcbuffer
@@ -1636,11 +1638,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
     }
   }
 
-  // Exclude CPU operation when initializing
-  if (sendToPAL) {
-    tick = finishedAt;
-    tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE_INTERNAL);
-  }
 
 #ifndef vertical
   // fill parity condition
@@ -1703,7 +1700,15 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
     ++pwrite[31];
 
   }
-  
+
+  finishedAt = MAX(finishedAt, beginAt);
+
+  // Exclude CPU operation when initializing
+  if (sendToPAL) {
+    tick = finishedAt;
+    tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE_INTERNAL);
+  }
+
   if (block->second.isfull()) {
     spareblk_idx = getFreeBlock(0);
   }
