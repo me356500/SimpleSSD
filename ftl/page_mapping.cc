@@ -136,12 +136,14 @@ bool PageMapping::initialize() {
   lpn_channel = vector<uint32_t>(68000000, 32);
   GCbuf.clear();
   GCbuf_seg.clear();
+#ifndef skip_invalidGCbuffer
   GCbuf.reserve(GCbufSize);
   GCbuf_seg.reserve(GCbufSize);
+#endif
   writeBuf.clear();
- // writeBuf.reserve(writeBufSize);
+  writeBuf.reserve(writeBufSize);
   writeBufVertical.clear();
-  //writeBufVertical.reserve(writeBufSize);
+  writeBufVertical.reserve(writeBufSize);
   segSB_time = 0;
   segSB_weight.clear();
   parity_cnt = 0;
@@ -232,7 +234,7 @@ bool PageMapping::initialize() {
 void PageMapping::read(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
 
-  if (lpn_channel[req.lpn] != IN_GCBUFFER) {
+  if (lpn_channel[req.lpn] != IN_GCBUFFER && lpn_channel[req.lpn] != IN_TPBUFFER) {
 
     req.ioFlag.reset();
     req.ioFlag.set(lpn_channel[req.lpn]);
@@ -279,16 +281,10 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
   }
   else {
 
-    Request req_copy(32);
-    req_copy.reqID = req.reqID;
-    req_copy.reqSubID = req.reqSubID;
-    req_copy.lpn = req.lpn;
-    req_copy.ioFlag.reset();
-    req_copy.ioFlag.set(1);
     if (SBtype == 0)
-      writeBuf.push_back(req_copy);
+      writeBuf.emplace_back(req);
     else if (SBtype == 1)
-      writeBufVertical.push_back(req_copy);
+      writeBufVertical.emplace_back(req);
 
     auto &curBuf = (SBtype ? writeBufVertical : writeBuf);
 
@@ -318,11 +314,11 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
 #endif 
       if (SBtype == 0) {
         writeBuf.clear();
-        //writeBuf.reserve(writeBufSize);
+        writeBuf.reserve(writeBufSize);
       }
       else if (SBtype == 1) {
         writeBufVertical.clear();
-        //writeBufVertical.reserve(writeBufSize);
+        writeBufVertical.reserve(writeBufSize);
       }
       
     }
@@ -834,24 +830,6 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     auto blk0 = blocks.find(MGCcandidate[0].first);
     auto blkSB = blocks.find(mostSB);
 
-#ifdef DEBUG
-
-    if (blk0 == blocks.end()) {
-      cout << "can't find blk0\n";
-    }
-    else if (blkSB == blocks.end()) {
-      cout << "can't find mostSB\n";
-    }
-    else if (blk_i == blocks.end()) {
-      cout << "can't find bli_i\n";
-    }
-
-    cout << "Ith : " << i << '\n';
-    cout << "blk0 :" << MGCcandidate[0].first << ", par : " << MGCcandidate[0].second << '\n';
-    //cout << "blk0 :" << MGCcandidate[0].first << ", par : " << MGCcandidate[0].second << '\n';
-    cout << "blki :" << MGCcandidate[i].first << ", par : " << MGCcandidate[i].second << '\n';
-    
-#endif
     uint32_t seg0_count = blk0->second.getPartialValidPageCount(i);
     uint32_t segSB_count = blkSB->second.getPartialValidPageCount(i);
     uint32_t seg_i_count = MGCcandidate[i].second;
@@ -869,15 +847,6 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
       MGCcandidate[i].second = segSB_count;
     }
   }
-#ifdef DEBUG
-  cout << "\nAfter twoSB\n";
-  for(uint32_t i = 0; i < MGC_segments; ++i) {
-    auto blk = blocks.find(MGCcandidate[i]);
-    uint32_t pv = blk->second.getPartialValidPageCount(i);
-    cout << pv << " ";
-  }
-  cout << "\n";
-#endif
 
   // MLCgetGCvictimGreedy.c:492
   uint32_t testsum = 0;
@@ -976,7 +945,20 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
     newBlockIdx = freeBlock->first;
 
     // idx channel
-    uint32_t write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+    uint32_t write_channel_idx;
+    if (SBtype == 1) {
+
+#ifdef segmentGCbuffer
+      write_channel_idx = freeBlock->second.getNextWriteChannelIndexSeg();
+#else
+      write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+#endif
+
+    }
+    else {
+      write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+    }
+
     uint32_t parity_channel_idx = freeBlock->second.getParityChannelIndex();
     // parity
     while (write_channel_idx == parity_channel_idx) {
@@ -1007,7 +989,18 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
 
       newBlockIdx = freeBlock->first;
       parity_channel_idx = freeBlock->second.getParityChannelIndex();
-      write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+
+      if (SBtype == 1) {
+#ifdef segmentGCbuffer
+        write_channel_idx = freeBlock->second.getNextWriteChannelIndexSeg();
+#else
+        write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+#endif
+
+      }
+      else if (SBtype == 0) {
+        write_channel_idx = freeBlock->second.getNextWriteChannelIndex();
+      }  
     }
     
 
@@ -1038,10 +1031,9 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
   if (freeBlock->second.getParityChannelIndex() == 31
     && freeBlock->second.getNextWritePageIndex(31) == 255
     && freeBlock->second.getNextWritePageIndex(30) == 256) {
+
     uint32_t pageidx = freeBlock->second.getNextWritePageIndex(31);
     freeBlock->second.write(pageidx, 0, 31, tick);
-    // no need to update mapping table
-    // invalidate immediately
     freeBlock->second.invalidate(pageidx, 31);
 
     // PAL req
@@ -1050,8 +1042,6 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
     parity_palreq.pageIndex = pageidx;
     parity_palreq.ioFlag.reset();
     parity_palreq.ioFlag.set(31);
-    // write to PAL
-    //pPAL->write(parity_palreq, beginAt);
     writeRequests.emplace_back(parity_palreq);
     ++parity_write;
     ++pwrite[31];
@@ -1064,11 +1054,15 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
 
   if (SBtype == 1) {
     GCbuf_seg.clear();
+#ifndef skip_invalidGCbuffer
     GCbuf_seg.reserve(GCbufSize);
+#endif
   }
   else {
     GCbuf.clear();
+#ifndef skip_invalidGCbuffer
     GCbuf.reserve(GCbufSize);
+#endif
   }
 
 #ifdef DEBUG
@@ -1125,14 +1119,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
       if (block->second.getPageInfo(pageIndex, lpns, bit)) {
         if (!bRandomTweak) {
           bit.set();
-        }
-
-        // Retrive free block
-        auto freeBlock = blocks.find(spareblk_idx);
-
-        if (freeBlock->second.isfull()) {
-          spareblk_idx = getFreeBlock(0);
-          freeBlock = blocks.find(spareblk_idx);
         }
 
         // Issue Read
@@ -1274,9 +1260,9 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 #ifdef transposebuffer
 
   if (MGC) {
-
+    
+  #ifdef segmentGCbuffer
     uint32_t segment_size = blk_per_superblk / MGC_segments;
-
     for (uint32_t i = 0; i < MGC_segments; ++i) {
       for (uint32_t j = 0; j < param.pagesInBlock; ++j) {
         for (uint32_t k = 0; k < segment_size; ++k) {
@@ -1295,8 +1281,27 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
         }
       }
     }
-  }
+  #else
+    for (uint32_t i = 0; i < param.pagesInBlock; ++i) {
+      for (uint32_t j = 0; j < 32; ++j) {
+        
+        if (transposeBuf[i][j].second == 0)
+          continue;
+        
+        GCbuf_seg.emplace_back(transposeBuf[i][j].first, 1);
 
+        lpn_channel[transposeBuf[i][j].first] = IN_TPBUFFER;
+        transposeBuf[i][j].second = 0;
+
+        if (GCbuf_seg.size() == GCbufSize) {
+          flushGCbuf(writeRequests, tick, 1);
+        }
+        
+      }
+    }
+  
+  #endif
+  }
 #endif
   // Do actual I/O here
   // This handles PAL2 limitation (SIGSEGV, infinite loop, or so-on)
@@ -1443,19 +1448,42 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
 
 
   if (lpn_channel[req.lpn] == IN_GCBUFFER) {
-    // remove request in gcbuffer
+
+#ifdef skip_invalidGCbuffer
+    for (auto i = GCbuf.begin(); i != GCbuf.end(); ) {
+      if (i->first == req.lpn) {
+        i = GCbuf.erase(i);
+      }
+      else 
+        ++i;
+    }
+#else
     for (auto &i : GCbuf) {
       if (i.first == req.lpn) {
         i.second = 0;
       }
     }
+#endif
+
   }
   else if (lpn_channel[req.lpn] == IN_TPBUFFER) {
+
+#ifdef skip_invalidGCbuffer
+    for (auto i = GCbuf_seg.begin(); i != GCbuf_seg.end(); ) {
+      if (i->first == req.lpn) {
+        i = GCbuf_seg.erase(i);
+      }
+      else 
+        ++i;
+    }
+#else
     for (auto &i : GCbuf_seg) {
       if (i.first == req.lpn) {
         i.second = 0;
       }
     }
+#endif
+
   }
   else {
 
@@ -1871,7 +1899,7 @@ void PageMapping::getStatList(std::vector<Stats> &list, std::string prefix) {
 }
 
 void PageMapping::getStatValues(std::vector<double> &values) {
-  values.push_back(stat.gcCount);
+  values.push_back(stat.gcCount - stat.MGCcount);
   values.push_back(stat.reclaimedBlocks);
   values.push_back(stat.MGCcopydata);
   values.push_back(stat.validPageCopies);

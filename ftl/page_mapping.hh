@@ -40,6 +40,7 @@
 #define NotFound 600000
 #define writebuffer
 #define GCbuffer
+#define segmentGCbuffer
 #define vertical
 //#define DEBUG
 #define transposebuffer
@@ -72,8 +73,8 @@ class PageMapping : public AbstractFTL {
   
   //std::vector<Request> GCbuf;
   // only need lpn
-  //std::list<uint64_t> GCbuf;
-  //std::list<uint64_t> GCbuf_seg;
+  //std::list<std::pair<uint64_t, uint32_t>> GCbuf;
+  //std::list<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf;
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   //std::vector<PAL::Request> GCbuf;
