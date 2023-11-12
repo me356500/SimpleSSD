@@ -337,7 +337,7 @@ void PALOLD::printPPN(Request &req, const char *prefix) {
 void PALOLD::getStatList(std::vector<Stats> &list, std::string prefix) {
   Stats temp;
 
-  temp.name = prefix + "energy.read";
+  /*temp.name = prefix + "energy.read";
   temp.desc = "Consumed energy by NAND read operation (uJ)";
   list.push_back(temp);
 
@@ -355,7 +355,7 @@ void PALOLD::getStatList(std::vector<Stats> &list, std::string prefix) {
 
   temp.name = prefix + "power";
   temp.desc = "Average power consumed by NAND (uW)";
-  list.push_back(temp);
+  list.push_back(temp);*/
 
   temp.name = prefix + "read.count";
   temp.desc = "Total read operation count";
@@ -380,7 +380,7 @@ void PALOLD::getStatList(std::vector<Stats> &list, std::string prefix) {
   temp.name = prefix + "erase.bytes";
   temp.desc = "Total erase operation bytes";
   list.push_back(temp);
-
+  /*
   temp.name = prefix + "read.time.dma0.wait";
   temp.desc = "Average dma0 wait time of read";
   list.push_back(temp);
@@ -460,6 +460,7 @@ void PALOLD::getStatList(std::vector<Stats> &list, std::string prefix) {
   temp.name = prefix + "die.time.active";
   temp.desc = "Average active time of all dies";
   list.push_back(temp);
+  */
 }
 
 void PALOLD::getStatValues(std::vector<double> &values) {
@@ -467,11 +468,11 @@ void PALOLD::getStatValues(std::vector<double> &values) {
   PALStatistics::OperStats ticks;
   PALStatistics::ActiveTime active;
   PALStatistics::Breakdown breakdown;
-  double elapsedTick = (double)(getTick() - lastResetTick);
+  //double elapsedTick = (double)(getTick() - lastResetTick);
 
-  stats->getEnergyStat(energy);
-  stats->getTickStat(ticks);
-
+  //stats->getEnergyStat(energy);
+  //stats->getTickStat(ticks);
+  /*
   values.push_back(energy.read);
   values.push_back(energy.write);
   values.push_back(energy.erase);
@@ -479,7 +480,7 @@ void PALOLD::getStatValues(std::vector<double> &values) {
 
   // uW = uJ / ps * 1e+12
   energy.total /= elapsedTick / 1e+12;
-  values.push_back(energy.total);
+  values.push_back(energy.total);*/
 
   values.push_back(stat.readCount);
   values.push_back(stat.writeCount);
@@ -488,7 +489,7 @@ void PALOLD::getStatValues(std::vector<double> &values) {
   values.push_back(stat.readCount * param.pageSize);
   values.push_back(stat.writeCount * param.pageSize);
   values.push_back(stat.eraseCount * param.pageSize * param.page);
-
+  /*
   stats->getReadBreakdown(breakdown);
   values.push_back(breakdown.dma0wait);
   values.push_back(breakdown.dma0);
@@ -517,7 +518,7 @@ void PALOLD::getStatValues(std::vector<double> &values) {
   values.push_back(active.average);
 
   stats->getDieActiveTimeAll(active);
-  values.push_back(active.average);
+  values.push_back(active.average);*/
 }
 
 void PALOLD::resetStatValues() {
