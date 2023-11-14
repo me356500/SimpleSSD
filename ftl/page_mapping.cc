@@ -132,7 +132,6 @@ bool PageMapping::initialize() {
   req.ioFlag.set();
 
   lpn_channel.clear();
-  warmup = 1;
   lpn_channel = vector<uint32_t>(68000000, 32);
   GCbuf.clear();
   GCbuf_seg.clear();
@@ -144,15 +143,12 @@ bool PageMapping::initialize() {
   writeBuf.reserve(writeBufSize);
   writeBufVertical.clear();
   writeBufVertical.reserve(writeBufSize);
-  segSB_time = 0;
   segSB_weight.clear();
-  parity_cnt = 0;
-  cur_tick = 0;
-  parity_write = 0;
-  GCcopypage = 0;
   pwrite = vector<uint32_t>(32, 0);
   spareblk_idx = 9999999;
-  MGCcount = 0;
+
+  // starting warmup, filling logical pages
+  warmup = 1;
   // Step 1. Filling
   if (mode == FILLING_MODE_0 || mode == FILLING_MODE_1) {
     // Sequential
@@ -210,7 +206,8 @@ bool PageMapping::initialize() {
       writeInternal(req, tick, false);
     }
   }
-
+  
+  // warmup end
   warmup = 0;
 
   // Report
@@ -234,8 +231,10 @@ bool PageMapping::initialize() {
 void PageMapping::read(Request &req, uint64_t &tick) {
   uint64_t begin = tick;
 
+  // skip read request if corresponding lpn in GCbuffer
   if (lpn_channel[req.lpn] != IN_GCBUFFER && lpn_channel[req.lpn] != IN_TPBUFFER) {
 
+    // set channel index according mapping table
     req.ioFlag.reset();
     req.ioFlag.set(lpn_channel[req.lpn]);
 
@@ -261,10 +260,6 @@ void PageMapping::read(Request &req, uint64_t &tick) {
 void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
   uint64_t begin = tick;
 
-#ifndef vertical
-  SBtype = 0;
-#endif
-
 #ifdef writebuffer
   if (warmup) {
     if (req.ioFlag.count() > 0) {
@@ -281,6 +276,7 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
   }
   else {
 
+    // push the request to corresponding buffer, according to SBtype
     if (SBtype == 0)
       writeBuf.emplace_back(req);
     else if (SBtype == 1)
@@ -305,13 +301,6 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
         }
       }
       
-#ifdef DEBUG
-      auto block = blocks.find(spareblk_idx);
-      if (!block->second.isfull() && !block->second.isempty()) {
-        cout << "After flush horizontal\n";
-        getBlockStatus();
-      }
-#endif 
       if (SBtype == 0) {
         writeBuf.clear();
         writeBuf.reserve(writeBufSize);
@@ -325,6 +314,7 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
   }
   
 #else
+
   if (req.ioFlag.count() > 0) {
     writeInternal(req, tick);
 
@@ -336,6 +326,7 @@ void PageMapping::write(Request &req, uint64_t &tick, bool SBtype) {
   else {
     warn("FTL got empty request");
   }
+
 #endif
   tick += applyLatency(CPU::FTL__PAGE_MAPPING, CPU::WRITE);
 }
@@ -450,6 +441,7 @@ uint32_t PageMapping::getFreeBlock(uint32_t idx) {
     for (; iter != freeBlocks.end(); iter++) {
       blockIndex = iter->getBlockIndex();
 
+      // simply get freeblock without considered it's idx
       break;
       //if (blockIndex % param.pageCountToMaxPerf == idx) {
       //  break;
@@ -503,34 +495,6 @@ uint32_t PageMapping::getLastFreeBlock(Bitset &iomap) {
     panic("Corrupted");
   }
 
-#ifdef parity_rotate
-  // If current free block parity index matches iomap
-  uint32_t parity_idx = freeBlock->second.getparityChannelIndex();
-  Bitset iomask(32);
-  iomask.reset();
-  iomask.set(parity_idx);
-
-  // parity channel conflict
-  while (parity_cnt && (iomask & iomap).any()) {
-
-    lastFreeBlockIOMap = iomap;
-
-    lastFreeBlockIndex++;
-
-    if (lastFreeBlockIndex == param.pageCountToMaxPerf) {
-      lastFreeBlockIndex = 0;
-    }
-
-    freeBlock = blocks.find(lastFreeBlock.at(lastFreeBlockIndex));
-
-    parity_idx = freeBlock->second.getparityChannelIndex();
-
-    iomask.reset();
-    iomask.set(parity_idx);
-
-  }
-#endif
-
   // If current free block is full, get next block
   if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
     lastFreeBlock.at(lastFreeBlockIndex) = getFreeBlock(lastFreeBlockIndex);
@@ -554,7 +518,6 @@ void PageMapping::calculateVictimWeight(
   segSB_weight.clear();
   segSB_weight.resize(MGC_segments);
 
-
 #endif
 
 
@@ -569,10 +532,10 @@ void PageMapping::calculateVictimWeight(
         }
 
 #ifdef segSB
+        // fill MGC victim and GC victim list according to SBtype of superblk
         if (iter.second.getSBtype() == 1) {
 
           for (int i = 0; i < MGC_segments; ++i) {
-
             segSB_weight[i].emplace_back(iter.first, iter.second.getPartialValidPageCount(i));
           }
 
@@ -580,7 +543,8 @@ void PageMapping::calculateVictimWeight(
         else if (iter.second.getSBtype() == 0) {
           weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
         }
-
+#else 
+        weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
 #endif
         
       }
@@ -612,7 +576,7 @@ void PageMapping::exchange_seg(uint32_t &dist, uint32_t &src, uint32_t seg_id) {
   auto dist_block = blocks.find(dist);
   auto src_block = blocks.find(src);
   uint32_t channel = seg_id * (blk_per_superblk / MGC_segments);
-  // pageindex, channel idx
+
 
   for (uint32_t i = 0; i < 8; ++i)  {
 
@@ -630,7 +594,7 @@ void PageMapping::exchange_seg(uint32_t &dist, uint32_t &src, uint32_t seg_id) {
       dist_block->second.setValidBits(pageIndex, idx, src_valid);
       src_block->second.setValidBits(pageIndex, idx, dist_valid);
 
-      // need to update mapping
+      // update valid mapping
       auto dist_map = table.find(dist_lpn);
 
       if (dist_map != table.end() && dist_valid) {
@@ -673,8 +637,6 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     bReclaimMore = false;
   }
 
-  //struct timeval start, end, elapsed;
-  //gettimeofday(&start, NULL);
 
   // Calculate weights of all blocks
   calculateVictimWeight(weight, policy, tick);
@@ -709,11 +671,6 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   // Select victims from the blocks with the lowest weight
   nBlocks = MIN(nBlocks, weight.size());
   
-  /* 
-    weight : block index , page valid count
-    parity SB mean parity Channel
-  
-  */
 #ifdef segSB
   
 
@@ -731,6 +688,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   uint32_t parityBlkIdx = 0;
   uint32_t maxCount = 0;
   uint32_t MGCcopydata = 0;
+
   // MLCgetGCvictimGreedy.c:50
   // Greedy select 4 segments
   for (uint32_t i = 0; i < MGC_segments; ++i) 
@@ -780,15 +738,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
     assert(MGCcandidate[i].first % blk_per_superblk == parityBlkIdx);
   }
-#ifdef DEBUG
-  cout << "\nGreedy\n";
-  for(uint32_t i = 0; i < MGC_segments; ++i) {
-    auto blk = blocks.find(MGCcandidate[i]);
-    uint32_t pv = blk->second.getPartialValidPageCount(i);
-    cout << pv << " ";
-  }
-  cout << "\n";
-#endif
+
   // MLCgetGCvictimGreedy.c:187 twoSB
   // Inoder to restrict superblock (2) : MGCcandidate[0] & most repeated SB
   vector<uint32_t> sameSBcount(MGC_segments, 0);
@@ -977,7 +927,6 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
 
       // write to PAL
       writeRequests.emplace_back(parity_palreq);
-      ++parity_write;
       ++pwrite[parity_channel_idx];
 
       // get next write 
@@ -1043,7 +992,6 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
     parity_palreq.ioFlag.reset();
     parity_palreq.ioFlag.set(31);
     writeRequests.emplace_back(parity_palreq);
-    ++parity_write;
     ++pwrite[31];
     // get next write 
   }
@@ -1065,12 +1013,6 @@ void PageMapping::flushGCbuf(std::vector<PAL::Request> &writeRequests, uint64_t 
 #endif
   }
 
-#ifdef DEBUG
-  if (!freeBlock->second.isempty() && !freeBlock->second.isfull()) {
-    cout << "After flush GC buf" << "\n";
-    getBlockStatus();
-  }
-#endif
 }
 
 void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
@@ -1128,8 +1070,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
 
         readRequests.push_back(req);
 
-        // Update mapping table
-        //uint32_t newBlockIdx = freeBlock->first;
 
         for (uint32_t idx = 0; idx < bitsetSize; idx++) {
           if (bit.test(idx)) {
@@ -1206,7 +1146,6 @@ void PageMapping::doGarbageCollection(std::vector<uint32_t> &blocksToReclaim,
               //pPAL->write(parity_palreq, tick);
               writeRequests.emplace_back(parity_palreq);
 
-              ++parity_write;
               // get next write 
               if (freeBlock->second.getNextWritePageIndex() == param.pagesInBlock) {
                 spareblk_idx = getFreeBlock(0);
@@ -1405,15 +1344,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
         panic("ftl: GC triggered while in initialization");
       }
 
-#ifdef DEBUG
-      auto block = blocks.find(spareblk_idx);
-    
-      if (!block->second.isempty() && !block->second.isfull()) {
-        cout << "Before GC\n";
-        getBlockStatus();
-      }
-#endif    
-  
       std::vector<uint32_t> list;
       uint64_t beginAt = tick;
       uint32_t MGC = 0;
@@ -1433,14 +1363,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
 
       stat.gcCount++;
       stat.reclaimedBlocks += list.size();
-
-#ifdef DEBUG
-      block = blocks.find(spareblk_idx);
-      if (!block->second.isempty() && !block->second.isfull()) {
-        cout << "After GC\n";
-        getBlockStatus();
-      }
-#endif
 
     }
   }
@@ -1566,7 +1488,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
     if (!warmup)
       pPAL->write(parity_palreq, tick);
 
-    ++parity_write;
     ++pwrite[write_channel_idx];
 
     // get next write 
@@ -1697,7 +1618,6 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
         if (!warmup)
           pPAL->write(parity_palreq, tick);
 
-        ++parity_write;
         ++pwrite[parity_channel_idx];
 
         write_channel_idx = block->second.getNextWriteChannelIndexVertical();
@@ -1724,7 +1644,7 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
     parity_palreq.ioFlag.set(31);
     // write to PAL
     pPAL->write(parity_palreq, beginAt);
-    ++parity_write;
+
     ++pwrite[31];
 
   }

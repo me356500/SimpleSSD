@@ -102,12 +102,9 @@ void ICL::write(Request &req, uint64_t &tick) {
   uint64_t reqRemain = req.length;
   Request reqInternal;
 
-  // ioflag 32
-  // ioFlag.set(r.range.slpn % iocount);
-  // lpn = slpn / iocount
   bool SBtype = 0;
-
-  if (req.length <= 32 * 1024) {
+  uint32_t smallreqSize = 32;
+  if (req.length <= smallreqSize * 1024) {
     SBtype = 1;
   }
 

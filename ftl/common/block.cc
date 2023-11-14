@@ -297,10 +297,6 @@ uint32_t Block::getValidPageCountRaw() {
     ret = pValidBits->count();
   }
   else {
-    /*
-    for (auto &iter : validBits) {
-      ret += iter.count();
-    }*/
     return validpage_cnt;
   }
 
@@ -379,8 +375,7 @@ bool Block::getPageInfo(uint32_t pageIndex, std::vector<uint64_t> &lpn,
     for (uint32_t idx = 0; idx < 32; ++idx) {
       lpn[idx] = ppLPNs[pageIndex][idx];
     }
-    //lpn = std::vector<uint64_t>(ppLPNs[pageIndex],
-    //                            ppLPNs[pageIndex] + ioUnitInPage);
+
   }
   else {
     panic("I/O map size mismatch");

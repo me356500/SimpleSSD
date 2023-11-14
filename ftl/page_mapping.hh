@@ -42,6 +42,7 @@
 #define GCbuffer
 #define segmentGCbuffer
 #define vertical
+//#define skip_invalidGCbuffer
 //#define DEBUG
 #define transposebuffer
 #define segSB
@@ -71,27 +72,18 @@ class PageMapping : public AbstractFTL {
   uint32_t bitsetSize;
 
   
-  //std::vector<Request> GCbuf;
-  // only need lpn
+
   //std::list<std::pair<uint64_t, uint32_t>> GCbuf;
   //std::list<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf;
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf_seg;
-  //std::vector<PAL::Request> GCbuf;
   std::vector<Request> writeBuf;
   std::vector<Request> writeBufVertical;
-  double segSB_time;
   vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
-  uint64_t parity_cnt;
-  uint64_t cur_tick;
-  uint64_t GCcopypage;
   uint32_t warmup;
   vector<uint32_t> pwrite;
-  uint32_t parity_write;
-  //std::unordered_map<uint64_t, uint32_t> lpn_channel;
   vector<uint32_t> lpn_channel;
   uint32_t spareblk_idx;
-  uint32_t MGCcount;
   struct {
     uint64_t gcCount;
     uint64_t reclaimedBlocks;
