@@ -79,7 +79,7 @@ class PageMapping : public AbstractFTL {
   std::vector<std::pair<uint64_t, uint32_t>> GCbuf_seg;
   std::vector<Request> writeBuf;
   std::vector<Request> writeBufVertical;
-  vector<vector<pair<uint32_t, uint32_t>>> segSB_weight;
+  vector<vector<std::tuple<uint32_t, uint32_t, uint64_t>>> segSB_weight;
   uint32_t warmup;
   vector<uint32_t> pwrite;
   vector<uint32_t> lpn_channel;
@@ -91,14 +91,18 @@ class PageMapping : public AbstractFTL {
     uint64_t validPageCopies;
     uint64_t MGCcount;
     uint64_t MGCcopydata;
+    uint64_t rewrite_parity;
   } stat;
 
   float freeBlockRatio();
   uint32_t convertBlockIdx(uint32_t);
   uint32_t getFreeBlock(uint32_t);
   uint32_t getLastFreeBlock(Bitset &);
-  void calculateVictimWeight(std::vector<std::pair<uint32_t, float>> &,
-                             const EVICT_POLICY, uint64_t);
+  //void calculateVictimWeight(std::vector<std::pair<uint32_t, float>> &,
+  //                           const EVICT_POLICY, uint64_t);
+  void calculateVictimWeight(std::vector<std::tuple<uint32_t, float, uint64_t>> &,
+                            const EVICT_POLICY, uint64_t);
+  
   void exchange_seg(uint32_t &, uint32_t &, uint32_t );
   void selectVictimBlock(std::vector<uint32_t> &, uint64_t &, uint32_t &);
   

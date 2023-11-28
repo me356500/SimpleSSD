@@ -414,7 +414,9 @@ bool Block::read(uint32_t pageIndex, uint32_t idx, uint64_t tick) {
   }
 
   if (read) {
-    lastAccessed = tick;
+    if (tick == (uint64_t)(1e63))
+      return read;
+    //lastAccessed = tick;
   }
 
   return read;

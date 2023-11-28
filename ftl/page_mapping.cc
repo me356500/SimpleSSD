@@ -58,6 +58,7 @@ PageMapping::PageMapping(ConfigReader &c, Parameter &p, PAL::PAL *l,
   memset(&stat, 0, sizeof(stat));
   stat.MGCcount = 0;
   stat.MGCcopydata = 0;
+  stat.rewrite_parity = 0;
   bRandomTweak = conf.readBoolean(CONFIG_FTL, FTL_USE_RANDOM_IO_TWEAK);
   bitsetSize = bRandomTweak ? param.ioUnitInPage : 1;
 }
@@ -507,9 +508,9 @@ uint32_t PageMapping::getLastFreeBlock(Bitset &iomap) {
 
 // calculate weight of each block regarding victim selection policy
 void PageMapping::calculateVictimWeight(
-    std::vector<std::pair<uint32_t, float>> &weight, const EVICT_POLICY policy,
+    std::vector<std::tuple<uint32_t, float, uint64_t>> &weight, const EVICT_POLICY policy,
     uint64_t tick) {
-  float temp;
+  //float temp;
 
   weight.reserve(blocks.size());
   
@@ -536,12 +537,15 @@ void PageMapping::calculateVictimWeight(
         if (iter.second.getSBtype() == 1) {
 
           for (int i = 0; i < MGC_segments; ++i) {
-            segSB_weight[i].emplace_back(iter.first, iter.second.getPartialValidPageCount(i));
+            segSB_weight[i].emplace_back(iter.first, iter.second.getPartialValidPageCount(i), iter.second.getLastAccessedTime());
           }
 
         }
         else if (iter.second.getSBtype() == 0) {
-          weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
+          weight.emplace_back(iter.first, iter.second.getValidPageCountRaw(), iter.second.getLastAccessedTime());
+        }
+        else {
+          cerr << "Invalid SB type, idx : " << iter.first << ", SBtype : " << iter.second.getSBtype() << "\n";
         }
 #else 
         weight.emplace_back(iter.first, iter.second.getValidPageCountRaw());
@@ -556,11 +560,13 @@ void PageMapping::calculateVictimWeight(
           continue;
         }
 
-        temp = (float)(iter.second.getValidPageCountRaw()) / param.pagesInBlock;
-
-        weight.push_back(
-            {iter.first,
-             temp / ((1 - temp) * (tick - iter.second.getLastAccessedTime()))});
+        //temp = (float)(iter.second.getValidPageCountRaw()) / param.pagesInBlock;
+        if (tick > 10)
+          break;
+        //tick = 888;
+        //weight.push_back(
+        //    {iter.first,
+        //     temp / ((1 - temp) * (tick - iter.second.getLastAccessedTime()))});
       }
 
       break;
@@ -610,10 +616,12 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   static const GC_MODE mode = (GC_MODE)conf.readInt(CONFIG_FTL, FTL_GC_MODE);
   static const EVICT_POLICY policy =
       (EVICT_POLICY)conf.readInt(CONFIG_FTL, FTL_GC_EVICT_POLICY);
-  static uint32_t dChoiceParam =
-      conf.readUint(CONFIG_FTL, FTL_GC_D_CHOICE_PARAM);
+  //static uint32_t dChoiceParam =
+  //    conf.readUint(CONFIG_FTL, FTL_GC_D_CHOICE_PARAM);
   uint64_t nBlocks = conf.readUint(CONFIG_FTL, FTL_GC_RECLAIM_BLOCK);
-  std::vector<std::pair<uint32_t, float>> weight;
+  //std::vector<std::pair<uint32_t, float>> weight;
+
+  vector<tuple<uint32_t, float, uint64_t>> weight;
 
   list.clear();
 
@@ -640,14 +648,18 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
 
   // Calculate weights of all blocks
   calculateVictimWeight(weight, policy, tick);
-
+  /*
   if (policy == POLICY_RANDOM || policy == POLICY_DCHOICE) {
+   
     uint64_t randomRange =
         policy == POLICY_RANDOM ? nBlocks : dChoiceParam * nBlocks;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<uint64_t> dist(0, weight.size() - 1);
     std::vector<std::pair<uint32_t, float>> selected;
+
+   
+
 
     while (selected.size() < randomRange) {
       uint64_t idx = dist(gen);
@@ -659,13 +671,20 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     }
 
     weight = std::move(selected);
+
   }
+  */
 
   // Sort weights
   std::sort(
       weight.begin(), weight.end(),
-      [](const std::pair<uint32_t, float> &a, const std::pair<uint32_t, float> &b) -> bool {
-        return a.second < b.second;
+      [](const tuple<uint32_t, float, uint64_t> &l, 
+        const tuple<uint32_t, float, uint64_t> &r) -> bool {
+        
+        if (get<1>(l) == get<1>(r))
+          return get<2>(l) < get<2>(r);
+
+        return get<1>(l) < get<1>(r);
       });
 
   // Select victims from the blocks with the lowest weight
@@ -677,8 +696,12 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   for (int i = 0; i < MGC_segments; ++i)
   {
     sort(segSB_weight[i].begin(), segSB_weight[i].end(),
-    [](const pair<uint32_t, uint32_t> &l, const pair<uint32_t, uint32_t> &r) ->bool {
-      return l.second < r.second;
+    [](const tuple<uint32_t, uint32_t, uint64_t> &l, const tuple<uint32_t, uint32_t, uint64_t> &r) ->bool {
+
+      if (get<1>(l) == get<1>(r))
+        return get<2>(l) < get<2>(r);
+
+      return get<1>(l) < get<1>(r);
     });
   }
 
@@ -693,7 +716,8 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
   // Greedy select 4 segments
   for (uint32_t i = 0; i < MGC_segments; ++i) 
   {
-    MGCcandidate[i] = (segSB_weight[i][0]);
+    
+    MGCcandidate[i] = make_pair(get<0>(segSB_weight[i][0]), get<1>(segSB_weight[i][0]));
     MGCcopydata += MGCcandidate[i].second;
   }
 
@@ -723,13 +747,13 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     {
       for (uint32_t j = 1; j < segSB_weight[i].size(); ++j) 
       {
-        if (segSB_weight[i][j].first % blk_per_superblk == parityBlkIdx) 
+        if (get<0>(segSB_weight[i][j]) % blk_per_superblk == parityBlkIdx) 
         {
           // check copydata calculate
-          MGCcopydata = MGCcopydata + segSB_weight[i][j].second
+          MGCcopydata = MGCcopydata + get<1>(segSB_weight[i][j])
             - MGCcandidate[i].second;
 
-          MGCcandidate[i] = segSB_weight[i][j];
+          MGCcandidate[i] = make_pair(get<0>(segSB_weight[i][j]), get<1>(segSB_weight[i][j]));
           break;
         }
       }
@@ -809,6 +833,7 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     panic("MGCcopydata mismatch");
   }
   
+  uint64_t rewrite_parity_data = 0;
   // calculate rewrite parity
   for (uint32_t i = 1; i < MGC_segments; ++i) 
   {
@@ -818,22 +843,26 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
       if (MGCcandidate[i].first == MGCcandidate[j].first)
         break;
     }  
-    if (j == i)
+    if (j == i) {
       MGCcopydata += 256;
+      rewrite_parity_data += 256;
+    }
+      
   }
 
-  uint32_t threshold = weight[0].second;
+  uint32_t threshold = get<1>(weight[0]);
 
   if (threshold > MGCcopydata + 0) 
   {
     MGC = 1;
     list.emplace_back(MGCcandidate[0].first);
     stat.MGCcopydata += MGCcopydata;
+    stat.rewrite_parity += rewrite_parity_data;
   }
   else 
   {
     MGC = 0;
-    list.emplace_back(weight[0].first);
+    list.emplace_back(get<0>(weight[0]));
   }
 
   if (MGC) 
@@ -843,6 +872,9 @@ void PageMapping::selectVictimBlock(std::vector<uint32_t> &list,
     for (uint32_t i = 1; i < MGC_segments; ++i) 
     {
       exchange_seg(MGCcandidate[0].first, MGCcandidate[i].first, i);
+
+      // rewrite parity block --> 256 pages 
+
     }
     
   }
@@ -1419,6 +1451,25 @@ void PageMapping::writeInternal(Request &req, uint64_t &tick, bool sendToPAL, bo
 
         // Invalidate current page
         block->second.invalidate(mapping.second, invalid_idx);
+
+        /*------------------Erase empty block-----------------------------*/
+
+        if (block->second.getValidPageCountRaw() == 0 && block->second.isfull()) {
+          // Erase block
+          PAL::Request erase_req(32);
+
+          erase_req.blockIndex = block->first;
+          erase_req.pageIndex = 0;
+          erase_req.ioFlag.set();
+          
+          eraseInternal(erase_req, tick);
+
+          if (mapping.first == spareblk_idx) {
+            spareblk_idx = getFreeBlock(0);
+          }
+        }
+        /*-----------------------------------------------------------------*/
+         
       }
         
       
@@ -1797,7 +1848,7 @@ void PageMapping::getStatList(std::vector<Stats> &list, std::string prefix) {
   temp.desc = "Total GC count";
   list.push_back(temp);
 
-  temp.name = prefix + "page_mapping.gc.reclaimed_blocks";
+  temp.name = prefix + "page_mapping.gc.rewrite_parity";
   temp.desc = "Total reclaimed blocks in GC";
   list.push_back(temp);
 
@@ -1820,7 +1871,7 @@ void PageMapping::getStatList(std::vector<Stats> &list, std::string prefix) {
 
 void PageMapping::getStatValues(std::vector<double> &values) {
   values.push_back(stat.gcCount - stat.MGCcount);
-  values.push_back(stat.reclaimedBlocks);
+  values.push_back(stat.rewrite_parity);
   values.push_back(stat.MGCcopydata);
   values.push_back(stat.validPageCopies);
   values.push_back((float)stat.MGCcount);
